@@ -219,12 +219,12 @@ function App() {
             <textarea value={task} onChange={e => setTask(e.target.value)} placeholder="Example: Help me prepare my application and tell me what is missing." />
             <label className="doclabel">Supporting documents</label>
             <div className="uploadbox">
-              <input id="docs" type="file" multiple onChange={handleFiles} accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg"/>
+              <input id="docs" type="file" multiple onChange={handleFiles} accept=".pdf,.txt,.png,.jpg,.jpeg,.webp"/>
               <label className="uploadlabel" htmlFor="docs">
                 {extracting ? <Loader2 className="spin" size={18}/> : <Upload size={18}/>}
                 {extracting ? "Reading documents…" : "Upload up to 5 documents"}
               </label>
-              <small className="uploadhint">PDF, DOC, DOCX, TXT, PNG or JPG · up to 50 MB each</small>
+              <small className="uploadhint">PDF, TXT, PNG, JPG or WEBP · up to 50 MB each</small>
               {files.length > 0 && <div className="filelist">{files.map(file => <span key={file.name}><FileText size={12}/>{file.name}</span>)}</div>}
             </div>
             <label>Or paste supporting text</label>
