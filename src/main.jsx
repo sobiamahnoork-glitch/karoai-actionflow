@@ -20,9 +20,45 @@ function App() {
   const [started, setStarted] = useState(false);
   const [task, setTask] = useState("");
   const [documents, setDocuments] = useState("");
+  const [files, setFiles] = useState([]);
+  const [extracting, setExtracting] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+
+  const handleFiles = async (event) => {
+    const selected = Array.from(event.target.files || []);
+    if (!selected.length) return;
+    setExtracting(true);
+    setError("");
+    try {
+      const extracted = [];
+      for (const file of selected.slice(0, 5)) {
+        if (file.size > 50 * 1024 * 1024) throw new Error(`${file.name} is larger than 50 MB.`);
+        const data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+          reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+          reader.readAsDataURL(file);
+        });
+        const response = await fetch("/api/extract-document", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, mimeType: file.type || "application/pdf", data })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `Could not process ${file.name}.`);
+        extracted.push({ name: file.name, text: result.text || "" });
+      }
+      setFiles(extracted);
+      setDocuments(extracted.map(d => `DOCUMENT: ${d.name}\n${d.text}`).join("\n\n"));
+    } catch (err) {
+      setError(err.message || "Document upload failed.");
+    } finally {
+      setExtracting(false);
+      event.target.value = "";
+    }
+  };
 
   const runWorkflow = async () => {
     if (!task.trim()) return;
@@ -73,9 +109,15 @@ function App() {
             <div className="taskbox">
               <label>What do you need KaroAI to do?</label>
               <textarea value={task} onChange={e => setTask(e.target.value)} placeholder="Example: Help me prepare my scholarship application and tell me what documents are missing." />
-              <label className="doclabel">Paste document text or notes (optional)</label>
-              <textarea className="smallarea" value={documents} onChange={e => setDocuments(e.target.value)} placeholder="Paste relevant text here. File upload is the next workflow layer." />
-              <button className="primary" onClick={runWorkflow} disabled={!task.trim()}>
+              <label className="doclabel">Upload documents</label>
+              <div className="uploadbox">
+                <input id="documents" type="file" accept=".pdf,.txt,.md,.json,.html,application/pdf,text/plain,text/markdown,application/json,text/html" multiple onChange={handleFiles} />
+                <label htmlFor="documents" className="uploadlabel"><Upload size={18}/><span>{extracting ? "Reading documents with Gemini..." : "Choose PDF or text documents"}</span></label>
+                {files.length > 0 && <div className="filelist">{files.map(file => <span key={file.name}><FileText size={14}/>{file.name}</span>)}</div>}
+              </div>
+              <label className="doclabel">Or paste document text / notes (optional)</label>
+              <textarea className="smallarea" value={documents} onChange={e => setDocuments(e.target.value)} placeholder="Paste relevant text here, or upload documents above." />
+              <button className="primary" onClick={runWorkflow} disabled={!task.trim() || extracting}>
                 Start AI workflow <ArrowRight size={18}/>
               </button>
             </div>
