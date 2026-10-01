@@ -224,7 +224,6 @@ function App() {
   const draftResult = workflowAgents.find(a => a.id === "draft")?.result;
   const workflowResult = workflowAgents.find(a => a.id === "workflow")?.result;
 
-  const gapMissingItems = Array.from(new Set((gapResult?.missing || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 12);
   const draftPlaceholders = Array.from(new Set(((draftResult?.output || "").match(/\[MISSING:\s*[^\]]+\]/gi) || []).map(item => item.trim()))).slice(0, 12);
   const missingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
   const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
@@ -233,7 +232,7 @@ function App() {
   const hasSupportingEvidence = Boolean(documents.trim());
   const requirements = [
     ...(requirementResult?.findings || []).map(text => ({ text, status: hasSupportingEvidence ? "Found in provided material" : "Suggested" })),
-    ...gapMissingItems.map(text => ({ text, status: "Missing" })),
+    ...missingItems.map(text => ({ text, status: "Missing" })),
     ...(verificationResult?.findings || []).map(text => ({ text, status: "Needs Review" }))
   ].slice(0, 10);
 
