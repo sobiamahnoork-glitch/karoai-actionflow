@@ -44,6 +44,7 @@ const schema = {
 };
 
 async function runAgent(agent, task, documents, state) {
+  if (!ai) throw new Error("GEMINI_API_KEY is not configured.");
   const prompt = [
     "You are the " + agent.name + " in KaroAI ActionFlow.",
     "ROLE: " + agent.instruction,
@@ -107,7 +108,7 @@ app.post("/api/run-workflow-stream", async (req, res) => {
       results.push({ id: agent.id, name: agent.name, status: "done", result });
       res.write(JSON.stringify({ type: "agent:complete", id: agent.id, name: agent.name, result }) + "\n");
     }
-    res.write(JSON.stringify({ type: "complete", workflow: { task, model, agents: results, final: state.workflow } }) + "\n");
+    res.write(JSON.stringify({ type: "complete", workflow: { task, model, agents: results, final: state.workflow || results[results.length - 1]?.result || null } }) + "\n");
     res.end();
   } catch (error) {
     res.write(JSON.stringify({ type: "error", error: error instanceof Error ? error.message : "Workflow execution failed." }) + "\n");
