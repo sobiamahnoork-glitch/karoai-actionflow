@@ -56,7 +56,7 @@ async function runAgent(agent, task, documents, state) {
   const response = await ai.models.generateContent({
     model,
     contents: prompt,
-    config: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2 }
+    config: { responseMimeType: "application/json", responseSchema: schema }
   });
   return JSON.parse(response.text);
 }
