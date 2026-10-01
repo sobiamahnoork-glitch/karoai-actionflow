@@ -27,6 +27,7 @@ function App() {
   const [error, setError] = useState("");
   const [activeAgent, setActiveAgent] = useState(null);
   const [liveAgents, setLiveAgents] = useState({});
+  const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem("karoai_history") || "[]"); } catch { return []; } });
 
   const handleFiles = async (event) => {
     const selected = Array.from(event.target.files || []);
