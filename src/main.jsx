@@ -196,6 +196,7 @@ function App() {
     try {
       await navigator.clipboard.writeText(text);
       setError("");
+      setCopyNotice("Result copied to clipboard.");
     } catch {
       setError("Could not copy the result. Please select and copy the text manually.");
     }
@@ -357,7 +358,7 @@ function App() {
             <section className="panel checklistpanel">
               <div className="panelhead"><div><h3>Missing information checklist</h3><small>Complete these before treating the application as ready</small></div><ClipboardCheck size={18}/></div>
               <div className={"readiness " + (draftReady ? "ready" : "needswork")}>
-                <div><span className="readinessdot"></span><b>{draftReady ? "Ready with current evidence" : "More information needed"}</b></div>
+                <div><span className="readinessdot"></span><b>{draftReady ? "No unresolved draft placeholders" : "More information needed"}</b></div>
                 <small>{draftReady ? "The current draft has no unresolved [MISSING: …] placeholders. Review evidence status before submission." : `${missingItems.length} unresolved draft item${missingItems.length === 1 ? "" : "s"}${needsReviewItems.length ? ` and ${needsReviewItems.length} verification item${needsReviewItems.length === 1 ? "" : "s"} needing review` : ""}.`}</small>
               </div>
               {!missingItems.length ? <div className="empty">{draftReady ? "No unresolved information remains in the current draft." : "No missing information was identified by the Gap Agent."}</div> :
