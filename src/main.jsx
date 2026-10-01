@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  CheckCircle2, FileText, Clock3, ShieldCheck, Sparkles, ArrowRight,
+  CheckCircle2, FileText, Clock3, ShieldCheck, Sparkles, ArrowRight, Copy,
   Upload, Activity, ClipboardCheck, AlertCircle, Loader2, X
 } from "lucide-react";
 import "./styles.css";
@@ -137,6 +137,17 @@ function App() {
     } finally {
       setRunning(false);
       setActiveAgent(null);
+    }
+  };
+
+  const copyFinalResult = async () => {
+    const text = result?.final?.output || draftResult?.output || "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setError("");
+    } catch {
+      setError("Could not copy the result. Please select and copy the text manually.");
     }
   };
 
@@ -288,7 +299,7 @@ function App() {
 
           {draftResult?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared draft</h3><small>Prepared from the verified workflow state</small></div><FileText size={18}/></div><div className="drafttext">{draftResult.output}</div></section>}
 
-          {result?.final?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared result</h3><small>Final workflow output</small></div><CheckCircle2 size={18}/></div><div className="drafttext">{result.final.output}</div></section>}
+          {result?.final?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared result</h3><small>Final workflow output</small></div><button className="iconbtn" onClick={copyFinalResult} title="Copy result" aria-label="Copy result"><Copy size={16}/></button></div><div className="drafttext">{result.final.output}</div></section>}
 
           {result && <section className="panel completionpanel">
             <div className="completionicon"><CheckCircle2 size={22}/></div>
