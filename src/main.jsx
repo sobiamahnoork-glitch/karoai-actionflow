@@ -59,11 +59,14 @@ function App() {
   const handleFiles = async (event) => {
     const selected = Array.from(event.target.files || []);
     if (!selected.length) return;
+    if (selected.length > 5) setError("Only the first 5 selected documents will be processed.");
     setExtracting(true);
     setError("");
     try {
       const extracted = [];
+      const existingNames = new Set(files.map(file => file.name.toLowerCase()));
       for (const file of selected.slice(0, 5)) {
+        if (existingNames.has(file.name.toLowerCase())) continue;
         if (file.size > 50 * 1024 * 1024) throw new Error(`${file.name} is larger than 50 MB.`);
         const data = await new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -80,8 +83,11 @@ function App() {
         if (!response.ok) throw new Error(extractedResult.error || `Could not process ${file.name}.`);
         extracted.push({ name: file.name, text: extractedResult.text || "" });
       }
-      setFiles(extracted);
-      setDocuments(extracted.map(d => `DOCUMENT: ${d.name}\n${d.text}`).join("\n\n"));
+      setFiles(prev => [...prev, ...extracted].slice(0, 5));
+      setDocuments(prev => {
+        const added = extracted.map(d => `DOCUMENT: ${d.name}\n${d.text}`).join("\n\n");
+        return prev ? `${prev}${prev.endsWith("\n") ? "" : "\n\n"}${added}` : added;
+      });
     } catch (err) {
       setError(err.message || "Document upload failed.");
     } finally {
@@ -156,10 +162,18 @@ function App() {
 
   const requirements = [
     ...(requirementResult?.findings || []).map(text => ({ text, status: "Documented" })),
-    ...(gapResult?.missing || []).map(text => ({ text, status: "Missing" }))
+    ...(gapResult?.missing || []).map(text => ({ text, status: "Missing" })),
+    ...(verificationResult?.findings || []).map(text => ({ text, status: "Needs Review" }))
   ].slice(0, 10);
 
   const evidence = [];
+  const evidenceStatus = (status) => {
+    const value = String(status || "Unverified").toLowerCase();
+    if (value.includes("contradict")) return "Contradicted";
+    if (value.includes("verif")) return "Verified";
+    if (value.includes("missing")) return "Missing";
+    return "Unverified";
+  };
   for (const agent of workflowAgents) {
     for (const item of agent.result?.evidence || []) {
       if (!item?.claim) continue;
@@ -199,6 +213,7 @@ function App() {
                 {extracting ? <Loader2 className="spin" size={18}/> : <Upload size={18}/>}
                 {extracting ? "Reading documents…" : "Upload up to 5 documents"}
               </label>
+              <small className="uploadhint">PDF, DOC, DOCX, TXT, PNG or JPG · up to 50 MB each</small>
               {files.length > 0 && <div className="filelist">{files.map(file => <span key={file.name}><FileText size={12}/>{file.name}</span>)}</div>}
             </div>
             <label>Or paste supporting text</label>
@@ -225,6 +240,13 @@ function App() {
             </div>
             <div className="progress"><b>{progress}%</b><span>{running ? `${agentOrder.findIndex(([id]) => id === activeAgent) + 1 || 0} of ${agentOrder.length} agents` : result ? "Completed" : "Ready"}</span></div>
           </div>
+
+          {result && <div className="metricrow">
+            <div className="metric"><b>{requirements.filter(x => x.status === "Documented").length}</b><span>Documented requirements</span></div>
+            <div className="metric"><b>{requirements.filter(x => x.status === "Missing").length}</b><span>Missing items</span></div>
+            <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified").length}</b><span>Verified claims</span></div>
+            <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
+          </div>}
 
           <div className="grid">
             <section className="panel agentpanel">
