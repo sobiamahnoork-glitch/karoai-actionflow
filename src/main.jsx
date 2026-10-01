@@ -290,6 +290,15 @@ function App() {
 
           {result?.final?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared result</h3><small>Final workflow output</small></div><CheckCircle2 size={18}/></div><div className="drafttext">{result.final.output}</div></section>}
 
+          {result && <section className="panel completionpanel">
+            <div className="completionicon"><CheckCircle2 size={22}/></div>
+            <div>
+              <h3>Workflow completed</h3>
+              <p>{result.final?.summary || "KaroAI completed the workflow and prepared the next actions from the available information."}</p>
+              <small>Review the evidence and action plan above before using the prepared output.</small>
+            </div>
+          </section>}
+
           {error && <div className="notice error"><AlertCircle size={17}/><div><b>Workflow error</b><span>{error}</span></div></div>}
 
           <div className="actions" style={{display:"flex",gap:10,marginTop:22}}>
