@@ -33,7 +33,7 @@ const agents = [
   { id: "requirement", name: "Requirement Agent", instruction: "Identify explicit requirements from supplied source material first. If the source material does not state requirements, label workflow suggestions as suggestions rather than documented requirements." },
   { id: "gap", name: "Gap Agent", instruction: "Compare documented requirements against extracted evidence. Identify missing documents, missing information, unresolved items, and satisfied items. Do not call an item satisfied unless the evidence supports it." },
   { id: "verification", name: "Verification Agent", instruction: "Cross-check important claims against supplied evidence. Use Verified only when the supplied evidence directly supports the claim; otherwise use Unverified, Missing, or Needs Review. Cite the originating document/page when available." },
-  { id: "draft", name: "Draft Agent", instruction: "Prepare a useful application-ready draft or structured packet using only evidence-supported facts. Never convert suggestions into facts. Clearly mark placeholders and unresolved items." },
+  { id: "draft", name: "Draft Agent", instruction: "Prepare a useful application-ready draft or structured packet using only evidence-supported facts. Never convert suggestions into facts. Every unresolved required input MUST appear as an explicit placeholder in the draft using the exact format [MISSING: item]. Do not silently omit missing fields. Clearly separate evidence-supported facts from placeholders and unresolved items." },
   { id: "workflow", name: "Workflow Agent", instruction: "Turn the verified current state into an ordered action plan. Prioritize missing evidence and unresolved requirements. Use deadlines or owners only when supported by evidence." }
 ];
 
@@ -83,7 +83,7 @@ async function runAgent(agent, task, documents, state) {
     "USER TASK:\n" + task,
     "SUPPLIED DOCUMENTS:\n" + (documents || "No documents supplied."),
     "PREVIOUS WORKFLOW STATE:\n" + JSON.stringify(state, null, 2),
-    "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, document contents, portal statuses, or verification results. CRITICAL EVIDENCE RULE: If no supporting document/evidence establishes a claim, the claim MUST be marked unverified or missing, never verified. A user task alone is not evidence. Do not invent sources such as portals, official records, workflow specifications, identity documents, or referee systems. Only cite source names that actually appear in the supplied evidence or are explicitly provided by the user. Keep the result practical and concise. Return valid JSON matching the schema."
+    "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, document contents, portal statuses, or verification results. CRITICAL EVIDENCE RULE: If no supporting document/evidence establishes a claim, the claim MUST be marked unverified or missing, never verified. A user task alone is not evidence. Do not invent sources such as portals, official records, workflow specifications, identity documents, or referee systems. Only cite source names that actually appear in the supplied evidence or are explicitly provided by the user. For Draft Agent output, every unresolved required input MUST use [MISSING: item]. Keep the result practical and concise. Return valid JSON matching the schema."
   ].join("\n\n");
 
   const response = await ai.models.generateContent({
