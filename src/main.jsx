@@ -171,8 +171,9 @@ function App() {
   const draftResult = workflowAgents.find(a => a.id === "draft")?.result;
   const workflowResult = workflowAgents.find(a => a.id === "workflow")?.result;
 
+  const hasSupportingEvidence = Boolean(documents.trim());
   const requirements = [
-    ...(requirementResult?.findings || []).map(text => ({ text, status: "Documented" })),
+    ...(requirementResult?.findings || []).map(text => ({ text, status: hasSupportingEvidence ? "Found in provided material" : "Suggested" })),
     ...(gapResult?.missing || []).map(text => ({ text, status: "Missing" })),
     ...(verificationResult?.findings || []).map(text => ({ text, status: "Needs Review" }))
   ].slice(0, 10);
@@ -253,7 +254,7 @@ function App() {
           </div>
 
           {result && <div className="metricrow">
-            <div className="metric"><b>{requirements.filter(x => x.status === "Documented").length}</b><span>Documented requirements</span></div>
+            <div className="metric"><b>{requirements.filter(x => x.status === "Found in provided material").length}</b><span>Evidence-backed requirements</span></div>
             <div className="metric"><b>{requirements.filter(x => x.status === "Missing").length}</b><span>Missing items</span></div>
             <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified").length}</b><span>Verified claims</span></div>
             <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
@@ -276,7 +277,7 @@ function App() {
             <section className="panel">
               <div className="panelhead"><div><h3>Requirements & gaps</h3><small>What the workflow found so far</small></div><ClipboardCheck size={18}/></div>
               {!requirements.length ? <div className="empty">{running ? "Requirements will appear as agents complete their analysis." : "No requirements were returned."}</div> :
-                requirements.map((item, i) => <div className="task" key={i}><div><b>{item.text}</b><span>Requirement check</span></div><span className={`badge ${item.status === "Missing" ? "missing" : "verified"}`}>{item.status}</span></div>)}
+                requirements.map((item, i) => <div className="task" key={i}><div><b>{item.text}</b><span>Requirement check</span></div><span className={`badge ${item.status === "Missing" ? "missing" : item.status === "Suggested" || item.status === "Needs Review" ? "review" : "verified"}`}>{item.status}</span></div>)}
             </section>
 
             <section className="panel">
