@@ -25,7 +25,8 @@ function App() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
-  const [activeAgent, setActiveAgent] = useState(null);\n  const [liveAgents, setLiveAgents] = useState({});
+  const [activeAgent, setActiveAgent] = useState(null);
+  const [liveAgents, setLiveAgents] = useState({});
 
   const handleFiles = async (event) => {
     const selected = Array.from(event.target.files || []);
