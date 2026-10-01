@@ -58,7 +58,7 @@ async function runAgent(agent, task, documents, state) {
     "USER TASK:\n" + task,
     "SUPPLIED DOCUMENTS:\n" + (documents || "No documents supplied."),
     "PREVIOUS WORKFLOW STATE:\n" + JSON.stringify(state, null, 2),
-    "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, or document contents. If something cannot be established, say unknown or unverified. Keep the result practical and concise. Return valid JSON matching the schema."
+    "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, document contents, portal statuses, or verification results. CRITICAL EVIDENCE RULE: If no supporting document/evidence establishes a claim, the claim MUST be marked unverified or missing, never verified. A user task alone is not evidence. Do not invent sources such as portals, official records, workflow specifications, identity documents, or referee systems. Only cite source names that actually appear in the supplied evidence or are explicitly provided by the user. Keep the result practical and concise. Return valid JSON matching the schema."
   ].join("\n\n");
 
   const response = await ai.models.generateContent({
