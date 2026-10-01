@@ -41,6 +41,8 @@ function App() {
     try { return JSON.parse(localStorage.getItem("karoai_history") || "[]"); } catch { return []; }
   });
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [completionAnswers, setCompletionAnswers] = useState({});
+  const [completing, setCompleting] = useState(false);
 
   const progress = useMemo(() => {
     const done = agentOrder.filter(([id]) => liveAgents[id] === "done").length;
@@ -150,6 +152,40 @@ function App() {
     }
   };
 
+  const completeDraft = async () => {
+    if (!result || completing) return;
+    const answered = Object.fromEntries(Object.entries(completionAnswers).map(([key, value]) => [key, String(value || "").trim()]).filter(([, value]) => value));
+    if (!Object.keys(answered).length) {
+      setError("Please complete at least one missing item first.");
+      return;
+    }
+    setCompleting(true);
+    setError("");
+    try {
+      const response = await fetch("/api/complete-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task, documents, workflow: result, answers: answered })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not prepare the revised draft.");
+      const nextWorkflow = {
+        ...result,
+        agents: (result.agents || []).map(agent => agent.id === "draft"
+          ? { ...agent, result: data.draft }
+          : agent),
+        final: data.draft
+      };
+      setResult(nextWorkflow);
+      saveHistory(nextWorkflow);
+      setCompletionAnswers({});
+    } catch (err) {
+      setError(err.message || "Could not prepare the revised draft.");
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   const copyFinalResult = async () => {
     const text = result?.final?.output || draftResult?.output || "";
     if (!text) return;
@@ -163,7 +199,7 @@ function App() {
 
   const newTask = () => {
     setStarted(false); setTask(""); setDocuments(""); setFiles([]); setResult(null);
-    setError(""); setLiveAgents({}); setActiveAgent(null); setHistoryOpen(false);
+    setError(""); setLiveAgents({}); setActiveAgent(null); setHistoryOpen(false); setCompletionAnswers({});
   };
 
   const restore = (item) => {
@@ -172,7 +208,7 @@ function App() {
     setFiles(item.files || []);
     setResult(item.workflow || null);
     setStarted(true); setRunning(false); setError(""); setHistoryOpen(false);
-    setLiveAgents(Object.fromEntries(agentOrder.map(([id]) => [id, "done"])));
+    setLiveAgents(Object.fromEntries(agentOrder.map(([id]) => [id, "done"]))); setCompletionAnswers({});
   };
 
   const agentState = (id) => liveAgents[id] || "queued";
@@ -346,6 +382,19 @@ function App() {
               ) : <div className="empty">{running ? "The Workflow Agent will prepare your action plan." : "No action steps were returned."}</div>}
             </section>
           </div>
+
+          {result && missingItems.length > 0 && <section className="panel completionpanel missingcompletion">
+            <div className="panelhead"><div><h3>Complete missing information</h3><small>Fill in what you know. KaroAI will update the draft without rerunning the full workflow.</small></div><ClipboardCheck size={18}/></div>
+            <div className="completionfields">
+              {missingItems.map((item, i) => <label className="completionfield" key={item + i}>
+                <span>{item}</span>
+                <textarea value={completionAnswers[item] || ""} onChange={e => setCompletionAnswers(prev => ({ ...prev, [item]: e.target.value }))} placeholder="Enter the missing information…" />
+              </label>)}
+            </div>
+            <button className="primary" onClick={completeDraft} disabled={completing || !Object.values(completionAnswers).some(value => String(value || "").trim())}>
+              {completing ? <><Loader2 className="spin" size={16}/> Updating draft…</> : <>Prepare updated draft <ArrowRight size={16}/></>}
+            </button>
+          </section>}
 
           {draftResult?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared draft</h3><small>Uses evidence-supported facts; unresolved inputs stay as placeholders</small></div><button className="iconbtn" onClick={() => copyText(draftResult.output, "Draft copied to clipboard.")} title="Copy draft" aria-label="Copy draft"><Copy size={16}/></button></div><div className="drafttext">{draftResult.output}</div>
             {draftPlaceholders.length > 0 && <div className="placeholderbox"><b>Placeholders to complete</b>{draftPlaceholders.map((item, i) => <span key={i}>{item}</span>)}</div>}
