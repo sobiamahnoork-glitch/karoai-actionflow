@@ -6,6 +6,9 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
+const MAX_UPLOAD_BYTES = 35 * 1024 * 1024;
+const SUPPORTED_UPLOAD_TYPES = new Set(["application/pdf", "text/plain", "image/png", "image/jpeg", "image/webp"]);
+
 const agentOrder = [
   ["intake", "Intake Agent", "Understanding your task"],
   ["document", "Document Agent", "Extracting relevant information"],
@@ -90,7 +93,8 @@ function App() {
       const existingNames = new Set(files.map(file => file.name.toLowerCase()));
       for (const file of selected.slice(0, 5)) {
         if (existingNames.has(file.name.toLowerCase())) continue;
-        if (file.size > 50 * 1024 * 1024) throw new Error(`${file.name} is larger than 50 MB.`);
+        if (!SUPPORTED_UPLOAD_TYPES.has(file.type)) throw new Error(`${file.name} is not a supported file type. Use PDF, TXT, PNG, JPG, or WEBP.`);
+        if (file.size > MAX_UPLOAD_BYTES) throw new Error(`${file.name} is larger than 35 MB.`);
         const data = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
