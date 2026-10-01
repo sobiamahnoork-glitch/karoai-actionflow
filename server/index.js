@@ -50,6 +50,31 @@ const schema = {
   required: ["summary", "findings", "missing", "evidence", "output", "nextSteps"]
 };
 
+function sanitizeEvidence(result, documents, task) {
+  const hasEvidence = Boolean(String(documents || "").trim());
+  const evidence = Array.isArray(result?.evidence) ? result.evidence : [];
+  if (hasEvidence) return result;
+
+  return {
+    ...result,
+    evidence: evidence.map(item => ({
+      ...item,
+      status: "Unverified",
+      source: "No supporting evidence provided"
+    })),
+    findings: (result?.findings || []).map(item => item),
+    missing: Array.from(new Set([
+      ...(result?.missing || []),
+      "Supporting documents or source material are needed to verify application-specific claims."
+    ])),
+    output: String(result?.output || "").replace(/\bVerified\b/gi, "Not verified"),
+    nextSteps: Array.from(new Set([
+      ...(result?.nextSteps || []),
+      "Provide the relevant application requirements or supporting documents before treating claims as verified."
+    ]))
+  };
+}
+
 async function runAgent(agent, task, documents, state) {
   if (!ai) throw new Error("GEMINI_API_KEY is not configured.");
   const prompt = [
@@ -66,7 +91,7 @@ async function runAgent(agent, task, documents, state) {
     contents: prompt,
     config: { responseMimeType: "application/json", responseSchema: schema }
   });
-  return JSON.parse(response.text);
+  return sanitizeEvidence(JSON.parse(response.text), documents, task);
 }
 
 app.post("/api/extract-document", async (req, res) => {
