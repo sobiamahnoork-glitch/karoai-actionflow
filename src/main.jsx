@@ -25,6 +25,7 @@ function App() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [activeAgent, setActiveAgent] = useState(null);
 
   const handleFiles = async (event) => {
     const selected = Array.from(event.target.files || []);
@@ -32,6 +33,7 @@ function App() {
     setExtracting(true);
     setError("");
     try {
+      setActiveAgent("intake");
       const extracted = [];
       for (const file of selected.slice(0, 5)) {
         if (file.size > 50 * 1024 * 1024) throw new Error(`${file.name} is larger than 50 MB.`);
@@ -73,6 +75,7 @@ function App() {
         body: JSON.stringify({ task, documents })
       });
       const data = await response.json();
+      setActiveAgent(null);
       if (!response.ok) throw new Error(data.error || "Workflow failed.");
       setResult(data.workflow);
     } catch (err) {
