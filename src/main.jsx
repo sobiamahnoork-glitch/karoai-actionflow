@@ -35,6 +35,7 @@ function App() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [copyNotice, setCopyNotice] = useState("");
   const [activeAgent, setActiveAgent] = useState(null);
   const [liveAgents, setLiveAgents] = useState({});
   const [history, setHistory] = useState(() => {
@@ -146,7 +147,9 @@ function App() {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      setError(successMessage);
+      setError("");
+      setCopyNotice("Result copied to clipboard.");
+      setCopyNotice(successMessage);
     } catch {
       setError("Could not copy the text. Please select and copy it manually.");
     }
@@ -179,6 +182,7 @@ function App() {
       setResult(nextWorkflow);
       saveHistory(nextWorkflow);
       setCompletionAnswers({});
+      setCopyNotice("Draft updated using the information you provided. It is not externally verified unless supported by the source documents.");
     } catch (err) {
       setError(err.message || "Could not prepare the revised draft.");
     } finally {
@@ -199,7 +203,7 @@ function App() {
 
   const newTask = () => {
     setStarted(false); setTask(""); setDocuments(""); setFiles([]); setResult(null);
-    setError(""); setLiveAgents({}); setActiveAgent(null); setHistoryOpen(false); setCompletionAnswers({});
+    setError(""); setCopyNotice(""); setLiveAgents({}); setActiveAgent(null); setHistoryOpen(false); setCompletionAnswers({});
   };
 
   const restore = (item) => {
@@ -207,7 +211,7 @@ function App() {
     setDocuments(item.documents || "");
     setFiles(item.files || []);
     setResult(item.workflow || null);
-    setStarted(true); setRunning(false); setError(""); setHistoryOpen(false);
+    setStarted(true); setRunning(false); setError(""); setCopyNotice(""); setHistoryOpen(false);
     setLiveAgents(Object.fromEntries(agentOrder.map(([id]) => [id, "done"]))); setCompletionAnswers({});
   };
 
@@ -219,15 +223,16 @@ function App() {
   const draftResult = workflowAgents.find(a => a.id === "draft")?.result;
   const workflowResult = workflowAgents.find(a => a.id === "workflow")?.result;
 
-  const missingItems = Array.from(new Set((gapResult?.missing || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 12);
+  const gapMissingItems = Array.from(new Set((gapResult?.missing || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 12);
+  const draftPlaceholders = Array.from(new Set(((draftResult?.output || "").match(/\[MISSING:\s*[^\]]+\]/gi) || []).map(item => item.trim()))).slice(0, 12);
+  const missingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
   const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
-  const draftPlaceholders = missingItems.map(item => `[MISSING: ${item}]`);
-  const draftReady = missingItems.length === 0 && needsReviewItems.length === 0;
+  const draftReady = Boolean(draftResult?.output) && draftPlaceholders.length === 0;
 
   const hasSupportingEvidence = Boolean(documents.trim());
   const requirements = [
     ...(requirementResult?.findings || []).map(text => ({ text, status: hasSupportingEvidence ? "Found in provided material" : "Suggested" })),
-    ...(gapResult?.missing || []).map(text => ({ text, status: "Missing" })),
+    ...gapMissingItems.map(text => ({ text, status: "Missing" })),
     ...(verificationResult?.findings || []).map(text => ({ text, status: "Needs Review" }))
   ].slice(0, 10);
 
@@ -353,9 +358,9 @@ function App() {
               <div className="panelhead"><div><h3>Missing information checklist</h3><small>Complete these before treating the application as ready</small></div><ClipboardCheck size={18}/></div>
               <div className={"readiness " + (draftReady ? "ready" : "needswork")}>
                 <div><span className="readinessdot"></span><b>{draftReady ? "Ready with current evidence" : "More information needed"}</b></div>
-                <small>{draftReady ? "No unresolved missing items or verification findings were returned." : `${missingItems.length} missing item${missingItems.length === 1 ? "" : "s"} and ${needsReviewItems.length} item${needsReviewItems.length === 1 ? "" : "s"} needing review.`}</small>
+                <small>{draftReady ? "The current draft has no unresolved [MISSING: …] placeholders. Review evidence status before submission." : `${missingItems.length} unresolved draft item${missingItems.length === 1 ? "" : "s"}${needsReviewItems.length ? ` and ${needsReviewItems.length} verification item${needsReviewItems.length === 1 ? "" : "s"} needing review` : ""}.`}</small>
               </div>
-              {!missingItems.length ? <div className="empty">No missing information was identified by the Gap Agent.</div> :
+              {!missingItems.length ? <div className="empty">{draftReady ? "No unresolved information remains in the current draft." : "No missing information was identified by the Gap Agent."}</div> :
                 <div className="checklist">{missingItems.map((item, i) =>
                   <div className="checkitem" key={i}><span className="checkmark"><AlertCircle size={14}/></span><div><b>{item}</b><small>Missing / unresolved</small></div></div>
                 )}</div>}
@@ -399,6 +404,8 @@ function App() {
           {draftResult?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared draft</h3><small>Uses evidence-supported facts; unresolved inputs stay as placeholders</small></div><button className="iconbtn" onClick={() => copyText(draftResult.output, "Draft copied to clipboard.")} title="Copy draft" aria-label="Copy draft"><Copy size={16}/></button></div><div className="drafttext">{draftResult.output}</div>
             {draftPlaceholders.length > 0 && <div className="placeholderbox"><b>Placeholders to complete</b>{draftPlaceholders.map((item, i) => <span key={i}>{item}</span>)}</div>}
           </section>}
+
+          {copyNotice && <div className="notice copyNotice"><CheckCircle2 size={17}/><div><b>Update</b><span>{copyNotice}</span></div></div>}
 
           {result?.final?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared result</h3><small>Final workflow output</small></div><button className="iconbtn" onClick={copyFinalResult} title="Copy result" aria-label="Copy result"><Copy size={16}/></button></div><div className="drafttext">{result.final.output}</div></section>}
 
