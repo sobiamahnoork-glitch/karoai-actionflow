@@ -171,6 +171,11 @@ function App() {
   const draftResult = workflowAgents.find(a => a.id === "draft")?.result;
   const workflowResult = workflowAgents.find(a => a.id === "workflow")?.result;
 
+  const missingItems = Array.from(new Set((gapResult?.missing || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 12);
+  const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
+  const draftPlaceholders = missingItems.map(item => `[MISSING: ${item}]`);
+  const draftReady = missingItems.length === 0 && needsReviewItems.length === 0;
+
   const hasSupportingEvidence = Boolean(documents.trim());
   const requirements = [
     ...(requirementResult?.findings || []).map(text => ({ text, status: hasSupportingEvidence ? "Found in provided material" : "Suggested" })),
@@ -296,6 +301,22 @@ function App() {
                 requirements.map((item, i) => <div className="task" key={i}><div><b>{item.text}</b><span>Requirement check</span></div><span className={`badge ${item.status === "Missing" ? "missing" : item.status === "Suggested" || item.status === "Needs Review" ? "review" : "verified"}`}>{item.status}</span></div>)}
             </section>
 
+            <section className="panel checklistpanel">
+              <div className="panelhead"><div><h3>Missing information checklist</h3><small>Complete these before treating the application as ready</small></div><ClipboardCheck size={18}/></div>
+              <div className={"readiness " + (draftReady ? "ready" : "needswork")}>
+                <div><span className="readinessdot"></span><b>{draftReady ? "Ready with current evidence" : "More information needed"}</b></div>
+                <small>{draftReady ? "No unresolved missing items or verification findings were returned." : `${missingItems.length} missing item${missingItems.length === 1 ? "" : "s"} and ${needsReviewItems.length} item${needsReviewItems.length === 1 ? "" : "s"} needing review.`}</small>
+              </div>
+              {!missingItems.length ? <div className="empty">No missing information was identified by the Gap Agent.</div> :
+                <div className="checklist">{missingItems.map((item, i) =>
+                  <div className="checkitem" key={i}><span className="checkmark"><AlertCircle size={14}/></span><div><b>{item}</b><small>Missing / unresolved</small></div></div>
+                )}</div>}
+              {needsReviewItems.length > 0 && <div className="reviewlist">
+                <b>Needs review</b>
+                {needsReviewItems.map((item, i) => <div key={i}><ShieldCheck size={13}/><span>{item}</span></div>)}
+              </div>}
+            </section>
+
             <section className="panel">
               <div className="panelhead"><div><h3>Evidence & verification</h3><small>Important claims and their source status</small></div><ShieldCheck size={18}/></div>
               {!evidence.length ? <div className="empty">{running ? "Verification evidence will appear here." : "No evidence items were returned."}</div> :
@@ -314,7 +335,9 @@ function App() {
             </section>
           </div>
 
-          {draftResult?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared draft</h3><small>Prepared from the verified workflow state</small></div><FileText size={18}/></div><div className="drafttext">{draftResult.output}</div></section>}
+          {draftResult?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared draft</h3><small>Uses evidence-supported facts; unresolved inputs stay as placeholders</small></div><FileText size={18}/></div><div className="drafttext">{draftResult.output}</div>
+            {draftPlaceholders.length > 0 && <div className="placeholderbox"><b>Placeholders to complete</b>{draftPlaceholders.map((item, i) => <span key={i}>{item}</span>)}</div>}
+          </section>}
 
           {result?.final?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared result</h3><small>Final workflow output</small></div><button className="iconbtn" onClick={copyFinalResult} title="Copy result" aria-label="Copy result"><Copy size={16}/></button></div><div className="drafttext">{result.final.output}</div></section>}
 
