@@ -11,6 +11,7 @@ app.use(express.json({ limit: "55mb" }));
 const MAX_TASK_CHARS = 12000;
 const MAX_DOCUMENT_CHARS = 120000;
 const MAX_EXTRACTED_TEXT_CHARS = 30000;
+const MAX_UPLOAD_BYTES = 35 * 1024 * 1024;
 const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
   "application/pdf",
   "text/plain",
@@ -18,6 +19,13 @@ const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp"
 ]);
+
+function validateUploadPayload(mimeType, data) {
+  if (!SUPPORTED_UPLOAD_MIME_TYPES.has(mimeType)) throw new Error("Unsupported document type.");
+  if (!data || typeof data !== "string") throw new Error("Document data is missing.");
+  const estimatedBytes = Math.floor((data.length * 3) / 4);
+  if (estimatedBytes > MAX_UPLOAD_BYTES) throw new Error("Document is larger than 35 MB. Please upload a smaller file.");
+}
 
 function validateWorkflowInput(task, documents) {
   if (!task || typeof task !== "string" || !task.trim()) throw new Error("A task is required.");
@@ -137,7 +145,9 @@ app.post("/api/run-workflow-stream", async (req, res) => {
     let state = {};
     const results = [];
     for (const agent of agents) {
-      res.write(JSON.stringify({ type: "agent:start", id: agent.id, name: agent.name }) + "\n");
+      res.write(JSON.stringify({ type: "agent:start", id: agent.id, name: agent.name }) + "\  const { name, mimeType, data } = req.body || {};
+  try { validateUploadPayload(mimeType, data); } catch (error) { return res.status(400).json({ error: error.message }); }
+n");
       const result = await runAgent(agent, task, documents, state);
       state = { ...state, [agent.id]: result };
       results.push({ id: agent.id, name: agent.name, status: "done", result });
