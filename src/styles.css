@@ -29,3 +29,5 @@
 .completionfield textarea{min-height:72px;resize:vertical;border:1px solid #e4e5df;border-radius:10px;background:#fff;padding:10px 11px;font:inherit;font-size:11px;color:#34352f;outline:none}
 .completionfield textarea:focus{border-color:#b9b9ad;box-shadow:0 0 0 3px rgba(0,0,0,.03)}
 @media(max-width:760px){.completionfields{grid-template-columns:1fr}}
+
+.agenttext small{display:block;margin-top:3px;color:#77786f;font-size:10px;line-height:1.35}.agenttext span{display:block;line-height:1.4}.copyNotice{margin-top:14px}
