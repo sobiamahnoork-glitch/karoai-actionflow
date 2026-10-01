@@ -242,8 +242,7 @@ function App() {
   const agentState = (id) => liveAgents[id] || "queued";
   const workflowAgents = result?.agents || [];
   const requirementResult = workflowAgents.find(a => a.id === "requirement")?.result;
-  const gapResult = workflowAgents.find(a => a.id === "gap")?.result;
-  const verificationResult = workflowAgents.find(a => a.id === "verification")?.result;
+    const verificationResult = workflowAgents.find(a => a.id === "verification")?.result;
   const draftResult = workflowAgents.find(a => a.id === "draft")?.result;
   const workflowResult = workflowAgents.find(a => a.id === "workflow")?.result;
 
@@ -306,7 +305,7 @@ function App() {
                 {extracting ? <Loader2 className="spin" size={18}/> : <Upload size={18}/>}
                 {extracting ? "Reading documents…" : "Upload up to 5 documents"}
               </label>
-              <small className="uploadhint">PDF, TXT, PNG, JPG or WEBP · up to 50 MB each</small>
+              <small className="uploadhint">PDF, TXT, PNG, JPG or WEBP · up to 35 MB each</small>
               {files.length > 0 && <div className="filelist">{files.map(file => <span key={file.name}><FileText size={12}/>{file.name}</span>)}</div>}
             </div>
             <label>Or paste supporting text</label>
@@ -336,7 +335,7 @@ function App() {
 
           {result && <div className="metricrow">
             <div className="metric"><b>{requirements.filter(x => x.status === "Found in provided material").length}</b><span>Evidence-backed requirements</span></div>
-            <div className="metric"><b>{requirements.filter(x => x.status === "Missing").length}</b><span>Missing items</span></div>
+            <div className="metric"><b>{missingItems.length}</b><span>Missing draft items</span></div>
             <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified").length}</b><span>Verified claims</span></div>
             <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
           </div>}
@@ -363,9 +362,22 @@ function App() {
               {agentOrder.map(([id, name, desc]) => {
                 const Icon = iconFor[id] || Activity;
                 const state = agentState(id);
+                const agentResult = workflowAgents.find(agent => agent.id === id)?.result;
+                const agentSummary = agentResult?.summary || "";
+                const agentCount = id === "verification"
+                  ? (agentResult?.evidence || []).length
+                  : id === "workflow"
+                    ? (agentResult?.nextSteps || []).length
+                    : id === "gap"
+                      ? (agentResult?.missing || []).length
+                      : (agentResult?.findings || []).length;
                 return <div className="agent" key={id}>
                   <div className={`agenticon ${state}`}>{state === "active" ? <Loader2 className="spin" size={16}/> : state === "done" ? <CheckCircle2 size={16}/> : <Icon size={16}/>}</div>
-                  <div className="agenttext"><b>{name}</b><span>{state === "active" ? desc : state === "done" ? "Completed" : "Queued"}</span></div>
+                  <div className="agenttext">
+                    <b>{name}</b>
+                    <span>{state === "active" ? desc : state === "done" ? (agentSummary || "Completed") : "Queued"}</span>
+                    {state === "done" && agentCount > 0 && <small>{agentCount} {id === "verification" ? "evidence item(s)" : id === "workflow" ? "action step(s)" : id === "gap" ? "missing item(s)" : "finding(s)"}</small>}
+                  </div>
                   <span className={`state ${state}`}>{state}</span>
                 </div>;
               })}
