@@ -7,7 +7,7 @@ const port = process.env.PORT || 8080;
 const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 app.use(cors());
 app.use(express.json({ limit: "8mb" }));
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 
 const agents = [
   { id: "intake", name: "Intake Agent", instruction: "Understand the user task, goal, constraints, dates, people, and requested outcome. Do not invent facts." },
