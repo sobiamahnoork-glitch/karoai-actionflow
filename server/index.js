@@ -7,6 +7,17 @@ const port = process.env.PORT || 8080;
 const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 app.use(cors());
 app.use(express.json({ limit: "55mb" }));
+
+const MAX_TASK_CHARS = 12000;
+const MAX_DOCUMENT_CHARS = 120000;
+const MAX_EXTRACTED_TEXT_CHARS = 30000;
+
+function validateWorkflowInput(task, documents) {
+  if (!task || typeof task !== "string" || !task.trim()) throw new Error("A task is required.");
+  if (task.length > MAX_TASK_CHARS) throw new Error(`Task is too long. Please keep it under ${MAX_TASK_CHARS.toLocaleString()} characters.`);
+  if (typeof documents !== "string") throw new Error("Supporting documents must be text.");
+  if (documents.length > MAX_DOCUMENT_CHARS) throw new Error(`Supporting documents are too large. Please keep them under ${MAX_DOCUMENT_CHARS.toLocaleString()} characters.`);
+}
 const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 
 const agents = [
@@ -69,7 +80,8 @@ Do not invent or interpret facts. If text is unreadable, say so.`;
       ]
     });
 
-    res.json({ ok: true, name, mimeType: safeMime, text: response.text || "" });
+    const extractedText = (response.text || "").slice(0, MAX_EXTRACTED_TEXT_CHARS);
+    res.json({ ok: true, name, mimeType: safeMime, text: extractedText });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Document extraction failed.", detail: error instanceof Error ? error.message : "Unknown error" });
@@ -84,7 +96,7 @@ app.post("/api/run-workflow-stream", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   try {
     const { task, documents = "" } = req.body || {};
-    if (!task || typeof task !== "string") throw new Error("A task is required.");
+    validateWorkflowInput(task, documents);
     if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured.");
     let state = {};
     const results = [];
@@ -107,7 +119,7 @@ app.post("/api/run-workflow-stream", async (req, res) => {
 app.post("/api/run-workflow", async (req, res) => {
   try {
     const { task, documents = "" } = req.body || {};
-    if (!task || typeof task !== "string") return res.status(400).json({ error: "A task is required." });
+    try { validateWorkflowInput(task, documents); } catch (validationError) { return res.status(400).json({ error: validationError instanceof Error ? validationError.message : "Invalid workflow input." }); }
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
     let state = {};
     const results = [];
