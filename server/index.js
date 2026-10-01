@@ -11,6 +11,13 @@ app.use(express.json({ limit: "55mb" }));
 const MAX_TASK_CHARS = 12000;
 const MAX_DOCUMENT_CHARS = 120000;
 const MAX_EXTRACTED_TEXT_CHARS = 30000;
+const SUPPORTED_UPLOAD_MIME_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "image/png",
+  "image/jpeg",
+  "image/webp"
+]);
 
 function validateWorkflowInput(task, documents) {
   if (!task || typeof task !== "string" || !task.trim()) throw new Error("A task is required.");
@@ -69,6 +76,9 @@ app.post("/api/extract-document", async (req, res) => {
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
 
     const safeMime = mimeType || "application/pdf";
+    if (!SUPPORTED_UPLOAD_MIME_TYPES.has(safeMime)) {
+      return res.status(400).json({ error: "Unsupported document type. Use PDF, TXT, PNG, JPG or WEBP." });
+    }
     const prompt = `Extract task-relevant information from the uploaded document "${name}".
 Return plain text only. Preserve important names, dates, amounts, requirements, document headings, and page references when visible.
 Do not invent or interpret facts. If text is unreadable, say so.`;
