@@ -51,10 +51,30 @@ function App() {
   }, [liveAgents, result]);
 
   const saveHistory = (workflow) => {
-    const item = { id: Date.now(), task: workflow.task, documents, files, workflow, createdAt: new Date().toISOString() };
+    const compactFiles = files.map(file => ({
+      name: file.name,
+      text: String(file.text || "").slice(0, 12000)
+    }));
+    const item = {
+      id: Date.now(),
+      task: workflow.task,
+      documents: String(documents || "").slice(0, 40000),
+      files: compactFiles,
+      workflow,
+      createdAt: new Date().toISOString()
+    };
     setHistory(prev => {
-      const next = [item, ...prev].slice(0, 20);
-      localStorage.setItem("karoai_history", JSON.stringify(next));
+      let next = [item, ...prev].slice(0, 12);
+      try {
+        localStorage.setItem("karoai_history", JSON.stringify(next));
+      } catch {
+        next = next.slice(0, 5);
+        try {
+          localStorage.setItem("karoai_history", JSON.stringify(next));
+        } catch {
+          setCopyNotice("This workflow could not be fully saved to browser history.");
+        }
+      }
       return next;
     });
   };
@@ -148,8 +168,7 @@ function App() {
     try {
       await navigator.clipboard.writeText(text);
       setError("");
-      setCopyNotice("Result copied to clipboard.");
-      setCopyNotice(successMessage);
+      setCopyNotice(successMessage || "Copied to clipboard.");
     } catch {
       setError("Could not copy the text. Please select and copy it manually.");
     }
