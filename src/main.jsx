@@ -48,7 +48,7 @@ function App() {
   }, [liveAgents, result]);
 
   const saveHistory = (workflow) => {
-    const item = { id: Date.now(), task: workflow.task, workflow, createdAt: new Date().toISOString() };
+    const item = { id: Date.now(), task: workflow.task, documents, files, workflow, createdAt: new Date().toISOString() };
     setHistory(prev => {
       const next = [item, ...prev].slice(0, 20);
       localStorage.setItem("karoai_history", JSON.stringify(next));
@@ -140,6 +140,16 @@ function App() {
     }
   };
 
+  const copyText = async (text, successMessage = "") => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setError(successMessage);
+    } catch {
+      setError("Could not copy the text. Please select and copy it manually.");
+    }
+  };
+
   const copyFinalResult = async () => {
     const text = result?.final?.output || draftResult?.output || "";
     if (!text) return;
@@ -158,6 +168,8 @@ function App() {
 
   const restore = (item) => {
     setTask(item.task || item.workflow?.task || "");
+    setDocuments(item.documents || "");
+    setFiles(item.files || []);
     setResult(item.workflow || null);
     setStarted(true); setRunning(false); setError(""); setHistoryOpen(false);
     setLiveAgents(Object.fromEntries(agentOrder.map(([id]) => [id, "done"])));
@@ -335,7 +347,7 @@ function App() {
             </section>
           </div>
 
-          {draftResult?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared draft</h3><small>Uses evidence-supported facts; unresolved inputs stay as placeholders</small></div><FileText size={18}/></div><div className="drafttext">{draftResult.output}</div>
+          {draftResult?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared draft</h3><small>Uses evidence-supported facts; unresolved inputs stay as placeholders</small></div><button className="iconbtn" onClick={() => copyText(draftResult.output, "Draft copied to clipboard.")} title="Copy draft" aria-label="Copy draft"><Copy size={16}/></button></div><div className="drafttext">{draftResult.output}</div>
             {draftPlaceholders.length > 0 && <div className="placeholderbox"><b>Placeholders to complete</b>{draftPlaceholders.map((item, i) => <span key={i}>{item}</span>)}</div>}
           </section>}
 
