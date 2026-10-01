@@ -171,4 +171,43 @@ app.post("/api/run-workflow", async (req, res) => {
   }
 });
 
+
+app.post("/api/complete-draft", async (req, res) => {
+  try {
+    const { task, documents = "", workflow, answers = {} } = req.body || {};
+    validateWorkflowInput(task, documents);
+    if (!ai) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
+    if (!workflow || typeof workflow !== "object") return res.status(400).json({ error: "A completed workflow is required." });
+    if (!answers || typeof answers !== "object" || !Object.keys(answers).length) {
+      return res.status(400).json({ error: "At least one completed missing item is required." });
+    }
+
+    const priorDraft = workflow.agents?.find(agent => agent.id === "draft")?.result || workflow.final || {};
+    const gap = workflow.agents?.find(agent => agent.id === "gap")?.result || {};
+    const verification = workflow.agents?.find(agent => agent.id === "verification")?.result || {};
+    const prompt = [
+      "You are the Draft Agent in KaroAI ActionFlow.",
+      "Update an existing application-ready draft using newly supplied answers.",
+      "USER TASK:\n" + task,
+      "SUPPLIED DOCUMENTS:\n" + (documents || "No supporting documents supplied."),
+      "EXISTING DRAFT:\n" + JSON.stringify(priorDraft, null, 2),
+      "KNOWN GAPS:\n" + JSON.stringify(gap.missing || [], null, 2),
+      "VERIFICATION FINDINGS:\n" + JSON.stringify(verification.findings || [], null, 2),
+      "NEW USER-PROVIDED ANSWERS:\n" + JSON.stringify(answers, null, 2),
+      "Rules: Treat the new answers as user-provided facts, but do not call them externally verified unless the supplied documents support them. Keep existing evidence-supported facts. Replace matching [MISSING: item] placeholders when the user answered that item. Keep unanswered missing items as [MISSING: item]. Never invent facts, requirements, citations, document contents, portal status, or verification results. Clearly distinguish user-provided information from document-supported evidence. Return valid JSON matching the schema."
+    ].join("\n\n");
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: { responseMimeType: "application/json", responseSchema: schema }
+    });
+    const draft = JSON.parse(response.text);
+    res.json({ ok: true, draft: sanitizeEvidence(draft, documents, task) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not prepare the revised draft.", detail: error instanceof Error ? error.message : "Unknown error" });
+  }
+});
+
 app.listen(port, () => console.log("KaroAI API listening on port " + port));
