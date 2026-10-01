@@ -78,6 +78,32 @@ Do not invent or interpret facts. If text is unreadable, say so.`;
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, service: "KaroAI ActionFlow", model }));
 
+app.post("/api/run-workflow-stream", async (req, res) => {
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  try {
+    const { task, documents = "" } = req.body || {};
+    if (!task || typeof task !== "string") throw new Error("A task is required.");
+    if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured.");
+    let state = {};
+    const results = [];
+    for (const agent of agents) {
+      res.write(JSON.stringify({ type: "agent:start", id: agent.id, name: agent.name }) + "\n");
+      const result = await runAgent(agent, task, documents, state);
+      state = { ...state, [agent.id]: result };
+      results.push({ id: agent.id, name: agent.name, status: "done", result });
+      res.write(JSON.stringify({ type: "agent:complete", id: agent.id, name: agent.name, result }) + "\n");
+    }
+    res.write(JSON.stringify({ type: "complete", workflow: { task, model, agents: results, final: state.workflow } }) + "\n");
+    res.end();
+  } catch (error) {
+    res.write(JSON.stringify({ type: "error", error: error instanceof Error ? error.message : "Workflow execution failed." }) + "\n");
+    res.end();
+  }
+});
+
+
 app.post("/api/run-workflow", async (req, res) => {
   try {
     const { task, documents = "" } = req.body || {};
