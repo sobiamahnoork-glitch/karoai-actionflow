@@ -1,137 +1,89 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  CheckCircle2,
-  FileText,
-  Clock3,
-  ShieldCheck,
-  Sparkles,
-  ArrowRight,
-  Upload,
-  Activity,
-  ClipboardCheck,
-  AlertCircle
+  CheckCircle2, FileText, Clock3, ShieldCheck, Sparkles, ArrowRight,
+  Upload, Activity, ClipboardCheck, AlertCircle, Loader2, X
 } from "lucide-react";
 import "./styles.css";
 
-const defaultAgents = [
-  ["Intake Agent", "Understanding your task", "done"],
-  ["Document Agent", "Extracting relevant information", "done"],
-  ["Requirement Agent", "Building requirements", "done"],
-  ["Gap Agent", "Checking missing items", "active"],
-  ["Verification Agent", "Cross-checking evidence", "queued"],
-  ["Draft Agent", "Preparing application", "queued"],
-  ["Workflow Agent", "Creating action plan", "queued"]
-];
-
-const defaultTasks = [
-  ["Identity document", "Required", "Verified"],
-  ["Academic transcript", "Required", "Verified"],
-  ["Statement of purpose", "Required", "Missing"],
-  ["Recommendation letter", "Required", "Pending"]
+const agentOrder = [
+  ["intake", "Intake Agent", "Understanding your task"],
+  ["document", "Document Agent", "Extracting relevant information"],
+  ["requirement", "Requirement Agent", "Building requirements"],
+  ["gap", "Gap Agent", "Checking missing items"],
+  ["verification", "Verification Agent", "Cross-checking evidence"],
+  ["draft", "Draft Agent", "Preparing output"],
+  ["workflow", "Workflow Agent", "Creating action plan"]
 ];
 
 function App() {
   const [started, setStarted] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [workflowData, setWorkflowData] = useState(null);
-  const [currentTab, setCurrentTab] = useState("Dashboard");
+  const [task, setTask] = useState("");
+  const [documents, setDocuments] = useState("");
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
 
-  const executeWorkflow = async () => {
-    setLoading(true);
+  const runWorkflow = async () => {
+    if (!task.trim()) return;
+    setStarted(true);
+    setRunning(true);
+    setError("");
+    setResult(null);
     try {
       const response = await fetch("/api/run-workflow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          task: "Masters scholarship application",
-          documents:
-            "Passport verified (Identity confirmed). Undergraduate transcript verified (GPA 3.8). Statement of purpose pending upload. Referee recommendations pending confirmation."
-        })
+        body: JSON.stringify({ task, documents })
       });
       const data = await response.json();
-      if (data && data.workflow) {
-        setWorkflowData(data.workflow);
-      }
+      if (!response.ok) throw new Error(data.error || "Workflow failed.");
+      setResult(data.workflow);
     } catch (err) {
-      console.error("Failed to run workflow:", err);
+      setError(err.message || "Could not run the workflow.");
     } finally {
-      setLoading(false);
+      setRunning(false);
     }
   };
 
-  const handleStart = () => {
-    setStarted(true);
-    executeWorkflow();
+  const agentState = (id) => {
+    if (!running && result?.agents?.some(a => a.id === id)) return "done";
+    if (running) return "active";
+    return "queued";
   };
-
-  const displayedAgents = workflowData
-    ? workflowData.agents.map((a) => [
-        a.name,
-        a.result?.summary || "Completed step",
-        a.status || "done"
-      ])
-    : defaultAgents;
-
-  const progressPercent = workflowData ? "100%" : "54%";
 
   return (
     <div className="app">
       <header>
         <div className="brand">
           <div className="logo">K</div>
-          <div>
-            <b>KaroAI</b>
-            <span>ActionFlow</span>
-          </div>
+          <div><b>KaroAI</b><span>ActionFlow</span></div>
         </div>
-        <nav>
-          {["Dashboard", "My Tasks", "Documents", "Activity"].map((tab) => (
-            <a
-              key={tab}
-              className={currentTab === tab ? "selected" : ""}
-              onClick={() => setCurrentTab(tab)}
-              style={{ cursor: "pointer" }}
-            >
-              {tab}
-            </a>
-          ))}
-        </nav>
+        <nav><a className="selected">Dashboard</a><a>My Tasks</a><a>Documents</a><a>Activity</a></nav>
         <button className="profile">SM</button>
       </header>
 
       <main>
         {!started ? (
           <section className="hero">
-            <div className="eyebrow">
-              <Sparkles size={15} /> AI-POWERED ACTION WORKFLOW
-            </div>
-            <h1>
-              Don’t just ask AI.<br />
-              <em>Give it a task.</em>
-            </h1>
-            <p>
-              Turn a real-world task into a clear, verified action plan. KaroAI understands
-              your documents, finds what’s missing, checks evidence, and prepares the next steps.
-            </p>
-            <div className="actions">
-              <button className="primary" onClick={handleStart} disabled={loading}>
-                {loading ? "Starting..." : "Start a task"} <ArrowRight size={18} />
-              </button>
-              <button className="secondary" onClick={handleStart}>
-                <Upload size={17} /> Upload documents
+            <div className="eyebrow"><Sparkles size={15}/> AI-POWERED ACTION WORKFLOW</div>
+            <h1>Don’t just ask AI.<br/><em>Give it a task.</em></h1>
+            <p>Turn a real-world task into a clear, verified action plan. KaroAI understands your documents, finds what’s missing, checks evidence, and prepares the next steps.</p>
+
+            <div className="taskbox">
+              <label>What do you need KaroAI to do?</label>
+              <textarea value={task} onChange={e => setTask(e.target.value)} placeholder="Example: Help me prepare my scholarship application and tell me what documents are missing." />
+              <label className="doclabel">Paste document text or notes (optional)</label>
+              <textarea className="smallarea" value={documents} onChange={e => setDocuments(e.target.value)} placeholder="Paste relevant text here. File upload is the next workflow layer." />
+              <button className="primary" onClick={runWorkflow} disabled={!task.trim()}>
+                Start AI workflow <ArrowRight size={18}/>
               </button>
             </div>
+
             <div className="trust">
-              <span>
-                <ShieldCheck size={16} /> Evidence-backed
-              </span>
-              <span>
-                <ClipboardCheck size={16} /> Multi-agent workflow
-              </span>
-              <span>
-                <CheckCircle2 size={16} /> Action-ready
-              </span>
+              <span><ShieldCheck size={16}/> Evidence-backed</span>
+              <span><ClipboardCheck size={16}/> Multi-agent workflow</span>
+              <span><CheckCircle2 size={16}/> Action-ready</span>
             </div>
           </section>
         ) : (
@@ -139,88 +91,53 @@ function App() {
             <div className="topline">
               <div>
                 <div className="eyebrow">ACTIVE WORKFLOW</div>
-                <h2>Scholarship Application</h2>
-                <p>Masters scholarship application · 7 agents working through your task</p>
+                <h2>{result?.final?.summary || "KaroAI Task"}</h2>
+                <p>{task}</p>
               </div>
               <div className="progress">
-                <b>{progressPercent}</b>
-                <span>workflow complete</span>
+                <b>{running ? "..." : "100%"}</b><span>workflow status</span>
               </div>
             </div>
 
             <div className="grid">
               <div className="panel">
-                <div className="panelhead">
-                  <div>
-                    <h3>Agent activity</h3>
-                    <small>
-                      {loading ? "Running agent pipeline..." : "Live workflow status"}
-                    </small>
-                  </div>
-                  <Activity size={19} />
-                </div>
-                {displayedAgents.map(([name, desc, status]) => (
-                  <div className="agent" key={name}>
-                    <div className={"agenticon " + status}>
-                      {status === "done" ? (
-                        <CheckCircle2 size={17} />
-                      ) : status === "active" ? (
-                        <Sparkles size={17} />
-                      ) : (
-                        <Clock3 size={17} />
-                      )}
-                    </div>
-                    <div className="agenttext">
-                      <b>{name}</b>
-                      <span>{desc}</span>
-                    </div>
-                    <span className={"state " + status}>{status}</span>
-                  </div>
-                ))}
+                <div className="panelhead"><div><h3>Agent activity</h3><small>{running ? "Agents are processing your task" : "Workflow completed"}</small></div><Activity size={19}/></div>
+                {agentOrder.map(([id, name, desc]) => {
+                  const state = agentState(id);
+                  return <div className="agent" key={id}>
+                    <div className={"agenticon " + state}>{state === "done" ? <CheckCircle2 size={17}/> : state === "active" ? <Loader2 className="spin" size={17}/> : <Clock3 size={17}/>}</div>
+                    <div className="agenttext"><b>{name}</b><span>{desc}</span></div>
+                    <span className={"state " + state}>{state}</span>
+                  </div>;
+                })}
               </div>
 
               <div className="panel">
-                <div className="panelhead">
-                  <div>
-                    <h3>Requirements & gaps</h3>
-                    <small>Detected from your task and documents</small>
-                  </div>
-                  <FileText size={19} />
-                </div>
-                {defaultTasks.map(([name, req, state]) => (
-                  <div className="task" key={name}>
-                    <div>
-                      <b>{name}</b>
-                      <span>{req}</span>
-                    </div>
-                    <span className={"badge " + state.toLowerCase()}>{state}</span>
-                  </div>
-                ))}
-                <div className="notice">
-                  <AlertCircle size={18} />
-                  <div>
-                    <b>1 item needs your attention</b>
-                    <span>Upload your statement of purpose to continue verification.</span>
-                  </div>
-                </div>
-                <button
-                  className="primary full"
-                  onClick={executeWorkflow}
-                  disabled={loading}
-                >
-                  {loading ? "Executing agents..." : "Continue workflow"}{" "}
-                  <ArrowRight size={17} />
+                <div className="panelhead"><div><h3>Requirements & gaps</h3><small>Generated from your task and evidence</small></div><FileText size={19}/></div>
+                {result?.final?.missing?.length ? result.final.missing.map((item, i) =>
+                  <div className="task" key={i}><div><b>Missing item</b><span>{item}</span></div><span className="badge missing">Missing</span></div>
+                ) : running ? <div className="empty">Waiting for the agents to finish their analysis...</div> :
+                  <div className="empty">No missing items were reported.</div>}
+
+                {error && <div className="notice error"><AlertCircle size={18}/><div><b>Workflow error</b><span>{error}</span></div></div>}
+
+                {!running && result?.final?.nextSteps?.length ? (
+                  <div className="resultbox"><b>Next steps</b>{result.final.nextSteps.map((step, i) => <span key={i}>{i + 1}. {step}</span>)}</div>
+                ) : null}
+
+                <button className="secondary full" onClick={() => {setStarted(false); setResult(null); setError("");}}>
+                  <X size={16}/> New task
                 </button>
               </div>
             </div>
+
+            {!running && result?.final?.output && (
+              <div className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared result</h3><small>Based on the verified workflow state</small></div><ClipboardCheck size={19}/></div><p>{result.final.output}</p></div>
+            )}
           </section>
         )}
       </main>
-
-      <footer>
-        <span>© 2026 KaroAI</span>
-        <span>Private by design · Your documents stay yours</span>
-      </footer>
+      <footer><span>© 2026 KaroAI</span><span>Private by design · Your documents stay yours</span></footer>
     </div>
   );
 }
