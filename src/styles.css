@@ -13,3 +13,5 @@
 
 
 .metricrow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.metric{border:1px solid var(--line);border-radius:14px;background:#fff;padding:14px 15px}.metric b{display:block;font-size:20px;color:#252620}.metric span{display:block;margin-top:4px;font-size:11px;color:#77786f}.uploadhint{display:block;margin:7px 2px 0;color:#77786f;font-size:10px}@media(max-width:760px){.metricrow{grid-template-columns:repeat(2,1fr)}}
+
+.completionpanel{margin-top:18px;display:flex;gap:14px;align-items:flex-start;padding:18px 20px}.completionicon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:#edf6ed;color:#39703d;flex:0 0 auto}.completionpanel h3{margin:0 0 5px}.completionpanel p{margin:0;color:#4d4e47;font-size:13px;line-height:1.55}.completionpanel small{display:block;margin-top:7px;color:#77786f;font-size:11px}
