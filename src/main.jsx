@@ -260,6 +260,22 @@ function App() {
             <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
           </div>}
 
+          {files.length > 0 && <section className="panel sourcepanel">
+            <div className="panelhead">
+              <div><h3>Source documents</h3><small>Evidence available to the workflow</small></div>
+              <FileText size={18}/>
+            </div>
+            <div className="sourceintro">KaroAI extracted these documents before running the agents. Claims can only be treated as verified when supported by the supplied material.</div>
+            <div className="sourcegrid">
+              {files.map((file, i) => (
+                <details className="sourcecard" key={file.name}>
+                  <summary><span><FileText size={15}/><b>{file.name}</b></span><small>Source {i + 1}</small></summary>
+                  <div className="sourcebody">{file.text || "No readable text was extracted from this document."}</div>
+                </details>
+              ))}
+            </div>
+          </section>}
+
           <div className="grid">
             <section className="panel agentpanel">
               <div className="panelhead"><div><h3>Agent activity</h3><small>Live execution across specialized agents</small></div><Activity size={18}/></div>
