@@ -28,13 +28,13 @@ function validateWorkflowInput(task, documents) {
 const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 
 const agents = [
-  { id: "intake", name: "Intake Agent", instruction: "Understand the user task, goal, constraints, dates, people, and requested outcome. Do not invent facts." },
-  { id: "document", name: "Document Agent", instruction: "Extract only task-relevant information from supplied documents. Preserve document names and page or section references when supplied. Never invent missing text." },
-  { id: "requirement", name: "Requirement Agent", instruction: "Determine requirements implied by the task and explicit requirements found in evidence. Separate documented requirements from reasonable workflow suggestions." },
-  { id: "gap", name: "Gap Agent", instruction: "Compare requirements against extracted evidence. Identify missing documents, missing information, unresolved items, and satisfied items." },
-  { id: "verification", name: "Verification Agent", instruction: "Cross-check important claims against supplied evidence. Mark claims verified, contradicted, or unverified and cite the originating source where possible." },
-  { id: "draft", name: "Draft Agent", instruction: "Prepare a useful draft or structured output using only verified information. Clearly mark placeholders for missing information." },
-  { id: "workflow", name: "Workflow Agent", instruction: "Turn the current state into an ordered action plan with priorities, owners where known, dependencies, and deadlines only when supported by evidence." }
+  { id: "intake", name: "Intake Agent", instruction: "Understand the user's goal, constraints, dates, people, requested outcome, and document context. Separate explicit user facts from assumptions." },
+  { id: "document", name: "Document Agent", instruction: "Extract structured, task-relevant facts from supplied documents. Preserve document names and page or section references when available. Never invent missing text." },
+  { id: "requirement", name: "Requirement Agent", instruction: "Identify explicit requirements from supplied source material first. If the source material does not state requirements, label workflow suggestions as suggestions rather than documented requirements." },
+  { id: "gap", name: "Gap Agent", instruction: "Compare documented requirements against extracted evidence. Identify missing documents, missing information, unresolved items, and satisfied items. Do not call an item satisfied unless the evidence supports it." },
+  { id: "verification", name: "Verification Agent", instruction: "Cross-check important claims against supplied evidence. Use Verified only when the supplied evidence directly supports the claim; otherwise use Unverified, Missing, or Needs Review. Cite the originating document/page when available." },
+  { id: "draft", name: "Draft Agent", instruction: "Prepare a useful application-ready draft or structured packet using only evidence-supported facts. Never convert suggestions into facts. Clearly mark placeholders and unresolved items." },
+  { id: "workflow", name: "Workflow Agent", instruction: "Turn the verified current state into an ordered action plan. Prioritize missing evidence and unresolved requirements. Use deadlines or owners only when supported by evidence." }
 ];
 
 const schema = {
