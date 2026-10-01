@@ -6,7 +6,7 @@ const app = express();
 const port = process.env.PORT || 8080;
 const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 app.use(cors());
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: "55mb" }));
 const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 
 const agents = [
@@ -49,6 +49,32 @@ async function runAgent(agent, task, documents, state) {
   });
   return JSON.parse(response.text);
 }
+
+app.post("/api/extract-document", async (req, res) => {
+  try {
+    const { name, mimeType, data } = req.body || {};
+    if (!name || !data) return res.status(400).json({ error: "A document is required." });
+    if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
+
+    const safeMime = mimeType || "application/pdf";
+    const prompt = `Extract task-relevant information from the uploaded document "${name}".
+Return plain text only. Preserve important names, dates, amounts, requirements, document headings, and page references when visible.
+Do not invent or interpret facts. If text is unreadable, say so.`;
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: [
+        { text: prompt },
+        { inlineData: { mimeType: safeMime, data } }
+      ]
+    });
+
+    res.json({ ok: true, name, mimeType: safeMime, text: response.text || "" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Document extraction failed.", detail: error instanceof Error ? error.message : "Unknown error" });
+  }
+});
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, service: "KaroAI ActionFlow", model }));
 
