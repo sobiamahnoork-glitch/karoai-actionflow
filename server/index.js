@@ -149,6 +149,15 @@ function sourceTextSupportsClaim(claim, documents) {
   return false;
 }
 
+function isRequirementGapClaim(claim, documents) {
+  const value = String(claim || "").toLowerCase();
+  const text = String(documents || "").toLowerCase();
+  const oneYear = /minimum\s+1\s+year|1\s+year/.test(value);
+  const experience = /relevant\s+legal\s+research\s+experience|legal\s+research\s+experience/.test(value);
+  const sixMonths = /6\s+months?|six\s+months?/.test(text);
+  return oneYear && experience && sixMonths;
+}
+
 function sanitizeEvidence(result, documents, task) {
   const hasEvidence = Boolean(String(documents || "").trim());
   const evidence = Array.isArray(result?.evidence) ? result.evidence : [];
@@ -160,7 +169,7 @@ function sanitizeEvidence(result, documents, task) {
       let status = "Unverified";
       if (/missing/i.test(original)) status = "Missing";
       else if (/contradict/i.test(original)) status = "Contradicted";
-      else if (sourceTextSupportsClaim(claim, documents)) status = "Supported by document";
+      else if (sourceTextSupportsClaim(claim, documents) && !isRequirementGapClaim(claim, documents)) status = "Supported by document";
       else if (/submitted|submission/.test(claim) && /before|deadline/.test(claim)) status = "Needs Review";
       else if (isUploadedDocumentSource(source, documents)) status = "Supported by document";
       return { ...item, status, source: source || "Supplied document" };
@@ -257,7 +266,12 @@ async function runAgent(agent, task, documents, state) {
       summary: "Action plan created from every unresolved source-listed requirement.",
       findings: sourceRequirements,
       missing: sourceRequirements,
-      nextSteps: sourceRequirements.map((item, index) => (index + 1) + ". Provide the required document: " + item),
+      nextSteps: sourceRequirements.map((item, index) => {
+        const experienceGap = /minimum\s+1\s+year|1\s+year/i.test(item) && /experience/i.test(item) && /6\s+months?|six\s+months?/i.test(documents);
+        return experienceGap
+          ? (index + 1) + ". Review the 1-year relevant legal research experience requirement against the documented 6-month experience."
+          : (index + 1) + ". Provide the required document: " + item;
+      }),
       evidence: sourceRequirements.map(item => ({
         claim: "Action blocked by missing source requirement: " + item,
         status: "Missing",
