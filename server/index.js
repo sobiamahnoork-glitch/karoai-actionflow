@@ -174,7 +174,7 @@ function parseStructuredSections(text) {
       continue;
     }
 
-    if (/^(?:eligibility\s+requirements|eligibility|required\s+qualifications|mandatory\s+requirements|minimum\s+requirements)\s*:?$/i.test(line)) {
+    if (/^(?:eligibility\s+requirements|eligibility|required\s+qualifications|mandatory\s+requirements|minimum\s+requirements|required)\s*:?$/i.test(line)) {
       currentSection = "eligibility";
       continue;
     }
