@@ -2,15 +2,48 @@ import express from "express";
 import cors from "cors";
 import { GoogleGenAI, Type } from "@google/genai";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const port = process.env.PORT || 8080;
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const host = "0.0.0.0";
 const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+
+function loadEnvFile() {
+  try {
+    const envPaths = [
+      path.resolve(__dirname, "..", ".env"),
+      path.resolve(process.cwd(), ".env"),
+      "/.env"
+    ];
+    for (const envPath of envPaths) {
+      if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, "utf-8");
+        for (const line of content.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) continue;
+          const match = trimmed.match(/^([^=]+)=(.*)$/);
+          if (match) {
+            const key = match[1].trim();
+            const val = match[2].trim().replace(/^["']|["']$/g, "");
+            const current = process.env[key] || "";
+            if (val && (!current || current.startsWith("MY_") || current.startsWith("YOUR_") || current.includes("PLACEHOLDER") || val.startsWith("AQ.") || val.startsWith("AIza"))) {
+              process.env[key] = val;
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+}
+loadEnvFile();
+
 app.use(cors());
 app.use(express.json({ limit: "55mb" }));
+app.use(express.urlencoded({ extended: true, limit: "55mb" }));
 app.use(express.static(path.join(__dirname, "..", "dist")));
 
 const MAX_TASK_CHARS = 12000;
@@ -38,7 +71,27 @@ function validateWorkflowInput(task, documents) {
   if (typeof documents !== "string") throw new Error("Supporting documents must be text.");
   if (documents.length > MAX_DOCUMENT_CHARS) throw new Error(`Supporting documents are too large. Please keep them under ${MAX_DOCUMENT_CHARS.toLocaleString()} characters.`);
 }
-const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
+
+function getApiKey() {
+  loadEnvFile();
+  const raw = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+  const cleaned = String(raw).trim().replace(/^["']|["']$/g, "");
+  if (!cleaned || cleaned.startsWith("MY_") || cleaned.startsWith("YOUR_") || cleaned.includes("PLACEHOLDER")) {
+    return null;
+  }
+  return cleaned;
+}
+
+let ai = null;
+
+function refreshAiClient() {
+  loadEnvFile();
+  const key = getApiKey();
+  ai = key ? new GoogleGenAI({ apiKey: key }) : null;
+  return ai;
+}
+
+refreshAiClient();
 
 const agents = [
   { id: "intake", name: "Intake Agent", instruction: "Understand the user's goal, constraints, dates, people, requested outcome, and document context. Separate explicit user facts from assumptions." },
@@ -198,6 +251,7 @@ function sanitizeEvidence(result, documents, task) {
 }
 
 async function runAgent(agent, task, documents, state) {
+  refreshAiClient();
   if (!ai) throw new Error("GEMINI_API_KEY is not configured.");
   const prompt = [
     "You are the " + agent.name + " in KaroAI ActionFlow.",
@@ -206,14 +260,27 @@ async function runAgent(agent, task, documents, state) {
     "SUPPLIED DOCUMENTS:\n" + (documents || "No documents supplied."),
     "SOURCE REQUIREMENTS EXTRACTED FROM THE DOCUMENT:\n" + JSON.stringify(state.sourceRequirements || [], null, 2),
     "PREVIOUS WORKFLOW STATE:\n" + JSON.stringify(state, null, 2),
-    "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, document contents, portal statuses, or verification results. REQUIREMENT RULE: When the source lists a required document or field, preserve that requirement as written; do not broaden it into extra fields (for example, do not turn "proof of identity" into "full legal name and photo ID") unless the source explicitly requires those fields. Separate "requirement documented in source" from "evidence/document supplied by user". CRITICAL EVIDENCE RULE: If no supporting document/evidence establishes a claim, the claim MUST be marked unverified or missing, never verified. A user task alone is not evidence. Do not invent sources such as portals, official records, workflow specifications, identity documents, or referee systems. Only cite source names that actually appear in the supplied evidence or are explicitly provided by the user. For Draft Agent output, every unresolved required input MUST use [MISSING: item]. Keep the result practical and concise. Return valid JSON matching the schema."
+    "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, document contents, portal statuses, or verification results. REQUIREMENT RULE: When the source lists a required document or field, preserve that requirement as written; do not broaden it into extra fields (for example, do not turn 'proof of identity' into 'full legal name and photo ID') unless the source explicitly requires those fields. Separate 'requirement documented in source' from 'evidence/document supplied by user'. CRITICAL EVIDENCE RULE: If no supporting document/evidence establishes a claim, the claim MUST be marked unverified or missing, never verified. A user task alone is not evidence. Do not invent sources such as portals, official records, workflow specifications, identity documents, or referee systems. Only cite source names that actually appear in the supplied evidence or are explicitly provided by the user. For Draft Agent output, every unresolved required input MUST use [MISSING: item]. Keep the result practical and concise. Return valid JSON matching the schema."
   ].join("\n\n");
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: prompt,
-    config: { responseMimeType: "application/json", responseSchema: schema }
-  });
+  const modelsToTry = [model, "gemini-3.1-flash-lite", "gemini-flash-latest"];
+  let response = null;
+  let lastErr = null;
+  for (const m of modelsToTry) {
+    try {
+      response = await ai.models.generateContent({
+        model: m,
+        contents: prompt,
+        config: { responseMimeType: "application/json", responseSchema: schema }
+      });
+      if (response?.text) break;
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
+  }
+  if (!response?.text) throw lastErr || new Error("Gemini workflow generation failed.");
+
   let result = JSON.parse(response.text);
   const sourceRequirements = Array.isArray(state.sourceRequirements) ? state.sourceRequirements : [];
   const sourceDocument = getUploadedDocumentNames(documents)[0] || "Supplied document";
@@ -283,47 +350,74 @@ async function runAgent(agent, task, documents, state) {
   return sanitizeEvidence(result, documents, task);
 }
 
+// API Routes
+app.get("/api/health", (_req, res) => res.json({ ok: true, service: "KaroAI ActionFlow", model }));
+
 app.post("/api/extract-document", async (req, res) => {
+  refreshAiClient();
   const { name, mimeType, data } = req.body || {};
   try { validateUploadPayload(mimeType, data); } catch (error) { return res.status(400).json({ error: error.message }); }
   try {
     if (!name || !data) return res.status(400).json({ error: "A document is required." });
-    if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
 
     const safeMime = mimeType || "application/pdf";
     if (!SUPPORTED_UPLOAD_MIME_TYPES.has(safeMime)) {
       return res.status(400).json({ error: "Unsupported document type. Use PDF, TXT, PNG, JPG or WEBP." });
     }
+
+    // Direct plain-text base64 decoding for immediate reliability
+    if (safeMime === "text/plain") {
+      try {
+        const decoded = Buffer.from(data, "base64").toString("utf-8");
+        if (decoded.trim()) {
+          return res.json({ ok: true, name, mimeType: safeMime, text: decoded.slice(0, MAX_EXTRACTED_TEXT_CHARS) });
+        }
+      } catch {}
+    }
+
+    if (!ai) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
+
     const prompt = `Extract task-relevant information from the uploaded document "${name}".
 Return plain text only. Preserve important names, dates, amounts, requirements, document headings, and page references when visible.
 Do not invent or interpret facts. If text is unreadable, say so.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: [
-        { text: prompt },
-        { inlineData: { mimeType: safeMime, data } }
-      ]
-    });
+    const modelsToTry = [model, "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    let lastError = null;
+    for (const m of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model: m,
+          contents: [
+            { text: prompt },
+            { inlineData: { mimeType: safeMime, data } }
+          ]
+        });
+        if (response?.text) {
+          const extractedText = (response.text || "").slice(0, MAX_EXTRACTED_TEXT_CHARS);
+          return res.json({ ok: true, name, mimeType: safeMime, text: extractedText });
+        }
+      } catch (err) {
+        lastError = err;
+        continue;
+      }
+    }
 
-    const extractedText = (response.text || "").slice(0, MAX_EXTRACTED_TEXT_CHARS);
-    res.json({ ok: true, name, mimeType: safeMime, text: extractedText });
+    throw lastError || new Error("Failed to extract document contents.");
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Document extraction failed.", detail: error instanceof Error ? error.message : "Unknown error" });
   }
 });
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, service: "KaroAI ActionFlow", model }));
-
 app.post("/api/run-workflow-stream", async (req, res) => {
+  refreshAiClient();
   res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   try {
     const { task, documents = "" } = req.body || {};
     validateWorkflowInput(task, documents);
-    if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured.");
+    if (!ai) throw new Error("GEMINI_API_KEY is not configured.");
     const sourceRequirements = extractExplicitRequirements(documents);
     let state = { sourceRequirements };
     const results = [];
@@ -342,12 +436,12 @@ app.post("/api/run-workflow-stream", async (req, res) => {
   }
 });
 
-
 app.post("/api/run-workflow", async (req, res) => {
+  refreshAiClient();
   try {
     const { task, documents = "" } = req.body || {};
     try { validateWorkflowInput(task, documents); } catch (validationError) { return res.status(400).json({ error: validationError instanceof Error ? validationError.message : "Invalid workflow input." }); }
-    if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
+    if (!ai) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
     const sourceRequirements = extractExplicitRequirements(documents);
     let state = { sourceRequirements };
     const results = [];
@@ -363,8 +457,8 @@ app.post("/api/run-workflow", async (req, res) => {
   }
 });
 
-
 app.post("/api/complete-draft", async (req, res) => {
+  refreshAiClient();
   try {
     const { task, documents = "", workflow, answers = {} } = req.body || {};
     validateWorkflowInput(task, documents);
@@ -389,11 +483,24 @@ app.post("/api/complete-draft", async (req, res) => {
       "Rules: Treat the new answers as user-provided facts, but do not call them externally verified unless the supplied documents support them. Keep existing evidence-supported facts. Replace matching [MISSING: item] placeholders when the user answered that item. Keep unanswered missing items as [MISSING: item]. Never invent facts, requirements, citations, document contents, portal status, or verification results. Clearly distinguish user-provided information from document-supported evidence. Return valid JSON matching the schema."
     ].join("\n\n");
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: schema }
-    });
+    const modelsToTry = [model, "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    let response = null;
+    let lastErr = null;
+    for (const m of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model: m,
+          contents: prompt,
+          config: { responseMimeType: "application/json", responseSchema: schema }
+        });
+        if (response?.text) break;
+      } catch (err) {
+        lastErr = err;
+        continue;
+      }
+    }
+    if (!response?.text) throw lastErr || new Error("Draft completion failed.");
+
     const draft = JSON.parse(response.text);
     res.json({ ok: true, draft: sanitizeEvidence(draft, documents, task) });
   } catch (error) {
@@ -402,20 +509,29 @@ app.post("/api/complete-draft", async (req, res) => {
   }
 });
 
-app.use("/api", (req, res, next) => {
-  if (res.headersSent) return next();
+// Any unmatched /api or /api/* request ALWAYS returns JSON 404, NEVER index.html!
+app.all(/^\/api(\/.*)?$/, (req, res) => {
   res.status(404).json({
     error: "API endpoint not found.",
-    path: req.path,
-    hint: "The backend route is unavailable in this deployment."
+    path: req.originalUrl || req.path,
+    hint: "The requested backend API route does not exist."
   });
 });
 
+// SPA fallback for all non-API GET routes
 app.get("*", (req, res, next) => {
-  if (req.path.startsWith("/api/")) return next();
-  res.sendFile(path.join(__dirname, "..", "dist", "index.html"), error => {
-    if (error) next(error);
-  });
+  if (req.path === "/api" || req.path.startsWith("/api/")) {
+    return res.status(404).json({ error: "API endpoint not found.", path: req.originalUrl || req.path });
+  }
+  const indexPath = path.join(__dirname, "..", "dist", "index.html");
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath, error => {
+      if (error) next(error);
+    });
+  }
+  res.status(200).send("<!doctype html><html><body><div id='root'></div><script type='module' src='/src/main.jsx'></script></body></html>");
 });
 
-app.listen(port, () => console.log("KaroAI ActionFlow listening on port " + port));
+app.listen(port, host, () => {
+  console.log(`KaroAI ActionFlow listening on http://${host}:${port}`);
+});

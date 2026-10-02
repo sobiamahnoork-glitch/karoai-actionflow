@@ -499,12 +499,15 @@ function App() {
 
             <section className="panel">
               <div className="panelhead"><div><h3>Evidence & verification</h3><small>Important claims and their source status</small></div><ShieldCheck size={18}/></div>
-              {!evidence.length ? <div className="empty">{running ? "Verification evidence will appear here." : "No evidence items were returned."}</div> :
+              {!evidence.length ? (
+                <div className="empty">{running ? "Verification evidence will appear here." : "No evidence items were returned."}</div>
+              ) : (
                 <div className="evidence">{evidence.slice(0, 12).map((item, i) => {
                   const normalizedStatus = evidenceStatus(item.status);
                   const badgeClass = normalizedStatus === "Missing" ? "missing" : normalizedStatus === "Verified" || normalizedStatus === "Supported by document" ? "verified" : "review";
                   return <div className="evidenceitem" key={i}><div><b>{item.claim}</b><span>{item.source || "Source not specified"}</span></div><span className={`badge ${badgeClass}`}>{normalizedStatus}</span></div>;
                 })}</div>
+              )}
             </section>
 
             <section className="panel">
