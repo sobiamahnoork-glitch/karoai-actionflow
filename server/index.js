@@ -344,9 +344,19 @@ function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDo
     // Check for Experience Requirement
     if (isExperienceRequirement(req)) {
       const requiresOneYear = /1\s*year|one\s*year|12\s*months?/.test(lowerReq);
-      const candidateHasSixMonths = /6\s*months?|six\s*months?/.test(lowerText);
-      // Only treat one year as candidate evidence when it is explicitly attached to the candidate's experience, not when it appears in the job requirement itself.
-      const candidateHasOneYear = /(?:candidate\s+(?:has|has\s+documented|documents|reports)\s+|experience\s*:\s*|experience\s+of\s+|documented\s+experience\s+(?:of\s+))(?:(?:at\s+least\s+)?1\s*year|one\s*year|12\s*months?)/i.test(text);
+      const candidateExperienceLines = text
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => /^(?:experience|employment|work\s+history|candidate\s+experience)\s*:/i.test(line))
+        .join(" ");
+      const candidateContextText = candidateExperienceLines || text
+        .split(/\r?\n/)
+        .filter(line => /candidate|applicant/i.test(line) && !/required|preferred|deadline|position/i.test(line))
+        .join(" ");
+      const candidateHasSixMonths = /6\s*months?|six\s*months?/.test(candidateContextText.toLowerCase());
+      // Candidate evidence is read only from explicit candidate-experience context.
+      // This prevents a "1 year" requirement in the job description from becoming candidate evidence.
+      const candidateHasOneYear = /(?:at\s+least\s+)?(?:1\s*year|one\s*year|12\s*months?)/i.test(candidateContextText);
 
       if (requiresOneYear && candidateHasSixMonths && !candidateHasOneYear) {
         return {
