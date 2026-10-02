@@ -134,7 +134,20 @@ async function runAgent(agent, task, documents, state) {
     contents: prompt,
     config: { responseMimeType: "application/json", responseSchema: schema }
   });
-  return sanitizeEvidence(JSON.parse(response.text), documents, task);
+  let result = JSON.parse(response.text);
+  if (agent.id === "requirement" && Array.isArray(state.sourceRequirements) && state.sourceRequirements.length) {
+    result = {
+      ...result,
+      findings: state.sourceRequirements,
+      missing: [],
+      evidence: state.sourceRequirements.map(item => ({
+        claim: "Requirement documented: " + item,
+        status: "Supported by document",
+        source: getUploadedDocumentNames(documents)[0] || "Supplied document"
+      }))
+    };
+  }
+  return sanitizeEvidence(result, documents, task);
 }
 
 app.post("/api/extract-document", async (req, res) => {
