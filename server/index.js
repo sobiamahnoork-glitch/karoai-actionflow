@@ -167,7 +167,8 @@ async function runAgent(agent, task, documents, state) {
     "ROLE: " + agent.instruction,
     "USER TASK:\n" + task,
     "SUPPLIED DOCUMENTS:\n" + (documents || "No documents supplied."),
-    "SOURCE REQUIREMENTS EXTRACTED FROM THE DOCUMENT:\n" + JSON.stringify(state.sourceRequirements || [], null, 2),\n    "PREVIOUS WORKFLOW STATE:\n" + JSON.stringify(state, null, 2),
+    "SOURCE REQUIREMENTS EXTRACTED FROM THE DOCUMENT:\n" + JSON.stringify(state.sourceRequirements || [], null, 2),
+    "PREVIOUS WORKFLOW STATE:\n" + JSON.stringify(state, null, 2),
     "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, document contents, portal statuses, or verification results. REQUIREMENT RULE: When the source lists a required document or field, preserve that requirement as written; do not broaden it into extra fields (for example, do not turn "proof of identity" into "full legal name and photo ID") unless the source explicitly requires those fields. Separate "requirement documented in source" from "evidence/document supplied by user". CRITICAL EVIDENCE RULE: If no supporting document/evidence establishes a claim, the claim MUST be marked unverified or missing, never verified. A user task alone is not evidence. Do not invent sources such as portals, official records, workflow specifications, identity documents, or referee systems. Only cite source names that actually appear in the supplied evidence or are explicitly provided by the user. For Draft Agent output, every unresolved required input MUST use [MISSING: item]. Keep the result practical and concise. Return valid JSON matching the schema."
   ].join("\n\n");
 
@@ -282,7 +283,8 @@ app.post("/api/run-workflow-stream", async (req, res) => {
     const { task, documents = "" } = req.body || {};
     validateWorkflowInput(task, documents);
     if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured.");
-    const sourceRequirements = extractExplicitRequirements(documents);\n    let state = { sourceRequirements };
+    const sourceRequirements = extractExplicitRequirements(documents);
+    let state = { sourceRequirements };
     const results = [];
     for (const agent of agents) {
       res.write(JSON.stringify({ type: "agent:start", id: agent.id, name: agent.name }) + "\n");
