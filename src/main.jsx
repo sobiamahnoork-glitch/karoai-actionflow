@@ -307,6 +307,13 @@ function App() {
     const verificationResult = workflowAgents.find(a => a.id === "verification")?.result;
   const draftResult = workflowAgents.find(a => a.id === "draft")?.result;
   const workflowResult = workflowAgents.find(a => a.id === "workflow")?.result;
+  // Build the visible action plan from deterministic evaluation, so the UI cannot
+  // lose a real qualification gap when an AI agent returns a weaker summary.
+  const actionSteps = result ? [
+    ...gapAnalysis.map(item => `Address qualification gap: ${item.description || item.requirement}`),
+    ...missingDocuments.map(doc => `Provide the required document: ${doc}`),
+    ...(result.deadline ? [`Submit the complete application packet before the documented deadline: ${result.deadline}`] : [])
+  ] : [];
 
   const draftPlaceholders = Array.from(new Set(((draftResult?.output || "").match(/\[MISSING:\s*[^\]]+\]/gi) || []).map(item => item.trim()))).slice(0, 12);
   const rawMissingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
@@ -459,7 +466,7 @@ function App() {
           {result && <div className="metricrow">
             <div className="metric"><b>{requiredAnalysis.length}</b><span>Required eligibility requirements</span></div>
             <div className="metric"><b>{missingDocuments.length}</b><span>Missing required documents</span></div>
-            <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified").length}</b><span>Verified claims</span></div>
+            <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified" || evidenceStatus(x.status) === "Supported by document").length}</b><span>Evidence-supported claims</span></div>
             <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
           </div>}
 
@@ -492,7 +499,7 @@ function App() {
                   : id === "workflow"
                     ? (agentResult?.nextSteps || []).length
                     : id === "gap"
-                      ? (agentResult?.missing || []).length
+                      ? (agentResult?.findings || []).length
                       : (agentResult?.findings || []).length;
                 return <div className="agent" key={id}>
                   <div className={`agenticon ${state}`}>{state === "active" ? <Loader2 className="spin" size={16}/> : state === "done" ? <CheckCircle2 size={16}/> : <Icon size={16}/>}</div>
@@ -546,7 +553,7 @@ function App() {
 
             <section className="panel">
               <div className="panelhead"><div><h3>Action plan</h3><small>Ordered next steps for completing the task</small></div><ArrowRight size={18}/></div>
-              {(workflowResult?.nextSteps || result?.final?.nextSteps || []).length ? (workflowResult?.nextSteps || result?.final?.nextSteps).map((step, i) =>
+              {actionSteps.length ? actionSteps.map((step, i) =>
                 <div className="task" key={i}><div><b>{i + 1}. {step}</b><span>{i === 0 ? "Start here" : "Next step"}</span></div><span className="badge pending">{i === 0 ? "Priority" : "Planned"}</span></div>
               ) : <div className="empty">{running ? "The Workflow Agent will prepare your action plan." : "No action steps were returned."}</div>}
             </section>
