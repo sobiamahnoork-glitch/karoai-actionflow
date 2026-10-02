@@ -568,18 +568,18 @@ async function runAgent(agent, task, documents, state) {
   }
 
   if (agent.id === "gap") {
-    // RULE 1: Experience gap is a qualification gap, NOT a missing document!
-    // RULE 4: missing array MUST ONLY contain missing required documents!
+    // Deterministic gap result: never let the model erase a detected qualification gap.
+    const gapLines = evaluation.gapAnalysis.map(g =>
+      `Qualification/Experience Gap: ${g.requirement} — ${g.candidateEvidence}; ${g.gap}`
+    );
+    const missingLines = evaluation.missingDocuments.map(d =>
+      `Missing Required Document: ${d} — not provided in supplied documents`
+    );
     result = {
       ...result,
-      summary: evaluation.gapAnalysis.length
-        ? `Identified ${evaluation.gapAnalysis.length} qualification gap(s) and ${evaluation.missingDocuments.length} missing required document(s). Preferred qualifications do not affect gap count.`
-        : `Identified ${evaluation.missingDocuments.length} missing required document(s). No qualification gaps identified.`,
-      findings: [
-        ...evaluation.gapAnalysis.map(g => `Experience Gap: ${g.requirement} — ${g.candidateEvidence} (${g.gap})`),
-        ...evaluation.missingDocuments.map(d => `Missing Document: ${d} — Required document not attached`)
-      ],
-      missing: evaluation.missingDocuments, // STRICTLY documents only!
+      summary: `Identified ${evaluation.gapAnalysis.length} qualification gap(s) and ${evaluation.missingDocuments.length} missing required document(s).`,
+      findings: [...gapLines, ...missingLines],
+      missing: evaluation.missingDocuments,
       evidence: [
         ...evaluation.gapAnalysis.map(g => ({
           claim: `Experience Requirement: ${g.requirement}`,
@@ -592,9 +592,11 @@ async function runAgent(agent, task, documents, state) {
           source: sourceDocument
         }))
       ],
-      output: evaluation.gapAnalysis.length
-        ? `Gap Analysis:\n- Qualification/Experience Gap: ${evaluation.gapAnalysis.map(g => g.description).join("; ")}\n- Missing Documents: ${evaluation.missingDocuments.join(", ")}.`
-        : `Gap Analysis:\n- Missing Documents: ${evaluation.missingDocuments.join(", ")}.`
+      output: [
+        "Gap Analysis:",
+        ...(gapLines.length ? gapLines.map(x => "- " + x) : ["- No qualification gaps identified."]),
+        ...(missingLines.length ? ["Missing Documents:", ...missingLines.map(x => "- " + x)] : ["Missing Documents: None."])
+      ].join("\n")
     };
   }
 
@@ -663,9 +665,9 @@ Experience Requirement Status:
   if (agent.id === "workflow") {
     // RULE 2: Deadline step ONLY if explicitly present in source!
     const steps = [];
-    if (evaluation.gapAnalysis.length) {
-      steps.push("Address the 1-year relevant legal research experience requirement; the supplied CV documents 6 months of relevant legal research experience.");
-    }
+    evaluation.gapAnalysis.forEach(g => {
+      steps.push(`Address qualification gap: ${g.description || g.requirement}`);
+    });
     evaluation.missingDocuments.forEach((doc, idx) => {
       steps.push(`Provide the required document: ${doc}`);
     });
