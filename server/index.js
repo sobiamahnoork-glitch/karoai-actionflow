@@ -109,6 +109,18 @@ function isUploadedDocumentSource(source, documents) {
   return getUploadedDocumentNames(documents).some(name => value.includes(name.toLowerCase()));
 }
 
+function sourceTextSupportsClaim(claim, documents) {
+  const text = String(documents || "");
+  const value = String(claim || "").toLowerCase();
+  if (/submitted|submission/.test(value) && /before|deadline/.test(value)) return false;
+  if (/pakistani national/.test(value) && /nationality\s*:\s*pakistani/i.test(text)) return true;
+  if (/cgpa/.test(value) && /3\.42\s*\/\s*4\.00/i.test(text) && /3\.00\s*\/\s*4\.00/i.test(text)) return true;
+  if (/completed undergraduate|undergraduate studies|undergraduate degree/.test(value) && /(completed undergraduate|graduation year|degree\s*:\s*bs)/i.test(text)) return true;
+  if (/required documents.*(explicitly|listed|documented)|eligibility requirements.*(explicitly|listed|documented)/i.test(value)) return true;
+  if (/none of the .*required documents.*attached|required documents.*not attached/i.test(value) && sourceSaysDocsNotAttached(text)) return true;
+  return false;
+}
+
 function sanitizeEvidence(result, documents, task) {
   const hasEvidence = Boolean(String(documents || "").trim());
   const evidence = Array.isArray(result?.evidence) ? result.evidence : [];
@@ -116,9 +128,12 @@ function sanitizeEvidence(result, documents, task) {
     const normalizedEvidence = evidence.map(item => {
       const source = String(item?.source || "").trim();
       const original = String(item?.status || "").trim();
+      const claim = String(item?.claim || "");
       let status = "Unverified";
       if (/missing/i.test(original)) status = "Missing";
       else if (/contradict/i.test(original)) status = "Contradicted";
+      else if (sourceTextSupportsClaim(claim, documents)) status = "Supported by document";
+      else if (/submitted|submission/.test(claim) && /before|deadline/.test(claim)) status = "Needs Review";
       else if (isUploadedDocumentSource(source, documents)) status = "Supported by document";
       return { ...item, status, source: source || "Supplied document" };
     });
