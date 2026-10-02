@@ -276,7 +276,7 @@ app.post("/api/run-workflow-stream", async (req, res) => {
       results.push({ id: agent.id, name: agent.name, status: "done", result });
       res.write(JSON.stringify({ type: "agent:complete", id: agent.id, name: agent.name, result }) + "\n");
     }
-    res.write(JSON.stringify({ type: "complete", workflow: { task, model, agents: results, final: state.workflow || results[results.length - 1]?.result || null } }) + "\n");
+    res.write(JSON.stringify({ type: "complete", workflow: { task, model, sourceRequirements, agents: results, final: state.workflow || results[results.length - 1]?.result || null } }) + "\n");
     res.end();
   } catch (error) {
     res.write(JSON.stringify({ type: "error", error: error instanceof Error ? error.message : "Workflow execution failed." }) + "\n");
@@ -298,7 +298,7 @@ app.post("/api/run-workflow", async (req, res) => {
       state = { ...state, [agent.id]: result };
       results.push({ id: agent.id, name: agent.name, status: "done", result });
     }
-    res.json({ ok: true, workflow: { task, model, agents: results, final: state.workflow } });
+    res.json({ ok: true, workflow: { task, model, sourceRequirements, agents: results, final: state.workflow } });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Workflow execution failed.", detail: error instanceof Error ? error.message : "Unknown error" });
