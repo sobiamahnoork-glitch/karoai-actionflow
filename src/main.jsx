@@ -239,6 +239,21 @@ function App() {
     setLiveAgents(Object.fromEntries(agentOrder.map(([id]) => [id, "done"]))); setCompletionAnswers({});
   };
 
+  const extractRequiredItems = (text) => {
+    const lines = String(text || "").split(/\r?\n/).map(line => line.replace(/^[#*\s]+|[*\s]+$/g, "").trim()).filter(Boolean);
+    const start = lines.findIndex(line => /^(required documents|documents required|required documents and information|documents\/information required)\s*:?[\s*]*$/i.test(line));
+    if (start < 0) return [];
+    const items = [];
+    for (let i = start + 1; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (/^(eligibility requirements|eligibility|applicant statement|important|testing note|note|deadline|application deadline)\b/i.test(line)) break;
+      const match = line.match(/^(?:[-•*]|\d+[.)])\s+(.+)$/);
+      if (match) items.push(match[1].trim());
+      else if (items.length && !/^[A-Z][^:]{0,70}:/.test(line)) items[items.length - 1] += " " + line;
+    }
+    return [...new Set(items)].slice(0, 30);
+  };
+
   const agentState = (id) => liveAgents[id] || "queued";
   const workflowAgents = result?.agents || [];
   const requirementResult = workflowAgents.find(a => a.id === "requirement")?.result;
@@ -247,14 +262,16 @@ function App() {
   const workflowResult = workflowAgents.find(a => a.id === "workflow")?.result;
 
   const draftPlaceholders = Array.from(new Set(((draftResult?.output || "").match(/\[MISSING:\s*[^\]]+\]/gi) || []).map(item => item.trim()))).slice(0, 12);
-  const missingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
+  const rawMissingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
+  const sourceRequirements = extractRequiredItems(documents);
+  const missingItems = sourceRequirements.length ? sourceRequirements : rawMissingItems;
   const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
   const draftReady = Boolean(draftResult?.output) && draftPlaceholders.length === 0;
 
   const hasSupportingEvidence = Boolean(documents.trim());
   const requirements = [
-    ...(requirementResult?.findings || []).map(text => ({ text, status: hasSupportingEvidence ? "Requirement documented" : "Suggested" })),
-    ...missingItems.map(text => ({ text, status: "Missing" })),
+    ...(sourceRequirements.length ? sourceRequirements : (requirementResult?.findings || [])).map(text => ({ text, status: "Requirement documented" })),
+    ...(sourceRequirements.length ? [] : missingItems).map(text => ({ text, status: "Missing" })),
     ...(verificationResult?.findings || []).map(text => ({ text, status: "Needs Review" }))
   ].slice(0, 10);
 
@@ -262,7 +279,7 @@ function App() {
   const evidenceStatus = (status) => {
     const value = String(status || "Unverified").toLowerCase();
     if (value.includes("contradict")) return "Contradicted";
-    if (value.includes("verif")) return "Verified";
+    if (value.includes("externally verified")) return "Verified";\n    if (value === "verified" && /external|independent/i.test(String(status))) return "Verified";
     if (value.includes("missing")) return "Missing";
     return "Unverified";
   };
