@@ -467,7 +467,7 @@ function App() {
             <div className="metric"><b>{requiredAnalysis.length}</b><span>Required eligibility requirements</span></div>
             <div className="metric"><b>{missingDocuments.length}</b><span>Missing required documents</span></div>
             <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified" || evidenceStatus(x.status) === "Supported by document").length}</b><span>Evidence-supported claims</span></div>
-            <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
+            <div className="metric"><b>{actionSteps.length}</b><span>Action steps</span></div>
           </div>}
 
           {files.length > 0 && <section className="panel sourcepanel">
@@ -506,7 +506,7 @@ function App() {
                   <div className="agenttext">
                     <b>{name}</b>
                     <span>{state === "active" ? desc : state === "done" ? (agentSummary || "Completed") : "Queued"}</span>
-                    {state === "done" && agentCount > 0 && <small>{agentCount} {id === "verification" ? "evidence item(s)" : id === "workflow" ? "action step(s)" : id === "gap" ? "missing item(s)" : "finding(s)"}</small>}
+                    {state === "done" && agentCount > 0 && <small>{agentCount} {id === "verification" ? "evidence item(s)" : id === "workflow" ? "action step(s)" : "finding(s)"}</small>}
                   </div>
                   <span className={`state ${state}`}>{state}</span>
                 </div>;
