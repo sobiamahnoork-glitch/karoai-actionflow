@@ -63,6 +63,36 @@ const schema = {
   required: ["summary", "findings", "missing", "evidence", "output", "nextSteps"]
 };
 
+function extractExplicitRequirements(documents) {
+  const text = String(documents || "");
+  const lines = text.split(/\r?\n/).map(line => line.replace(/^\s+|\s+$/g, "").replace(/^\*+|\*+$/g, "").trim()).filter(Boolean);
+  const headingIndex = lines.findIndex(line => /^(required documents|documents required|required documents and information|documents\/information required)\s*:?[\s*]*$/i.test(line));
+  if (headingIndex < 0) return [];
+  const items = [];
+  for (let i = headingIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i].replace(/^\*+|\*+$/g, "").trim();
+    if (/^(eligibility requirements|eligibility|applicant statement|important|testing note|note|deadline|application deadline)\b/i.test(line)) break;
+    const match = line.match(/^(?:[-•*]|\d+[.)])\s+(.+)$/);
+    if (match) {
+      items.push(match[1].trim());
+      continue;
+    }
+    if (items.length && !/:\s*$/.test(line) && !/^[A-Z][^:]{0,70}:/.test(line)) {
+      items[items.length - 1] = items[items.length - 1] + " " + line;
+    }
+  }
+  return Array.from(new Set(items)).slice(0, 30);
+}
+
+function getUploadedDocumentNames(documents) {
+  return Array.from(String(documents || "").matchAll(/(?:^|\n)DOCUMENT:\s*([^\n]+)/g)).map(match => match[1].trim());
+}
+
+function isUploadedDocumentSource(source, documents) {
+  const value = String(source || "").toLowerCase();
+  return getUploadedDocumentNames(documents).some(name => value.includes(name.toLowerCase()));
+}
+
 function sanitizeEvidence(result, documents, task) {
   const hasEvidence = Boolean(String(documents || "").trim());
   const evidence = Array.isArray(result?.evidence) ? result.evidence : [];
@@ -95,7 +125,7 @@ async function runAgent(agent, task, documents, state) {
     "ROLE: " + agent.instruction,
     "USER TASK:\n" + task,
     "SUPPLIED DOCUMENTS:\n" + (documents || "No documents supplied."),
-    "PREVIOUS WORKFLOW STATE:\n" + JSON.stringify(state, null, 2),
+    "SOURCE REQUIREMENTS EXTRACTED FROM THE DOCUMENT:\n" + JSON.stringify(state.sourceRequirements || [], null, 2),\n    "PREVIOUS WORKFLOW STATE:\n" + JSON.stringify(state, null, 2),
     "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, document contents, portal statuses, or verification results. REQUIREMENT RULE: When the source lists a required document or field, preserve that requirement as written; do not broaden it into extra fields (for example, do not turn "proof of identity" into "full legal name and photo ID") unless the source explicitly requires those fields. Separate "requirement documented in source" from "evidence/document supplied by user". CRITICAL EVIDENCE RULE: If no supporting document/evidence establishes a claim, the claim MUST be marked unverified or missing, never verified. A user task alone is not evidence. Do not invent sources such as portals, official records, workflow specifications, identity documents, or referee systems. Only cite source names that actually appear in the supplied evidence or are explicitly provided by the user. For Draft Agent output, every unresolved required input MUST use [MISSING: item]. Keep the result practical and concise. Return valid JSON matching the schema."
   ].join("\n\n");
 
@@ -149,7 +179,7 @@ app.post("/api/run-workflow-stream", async (req, res) => {
     const { task, documents = "" } = req.body || {};
     validateWorkflowInput(task, documents);
     if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured.");
-    let state = {};
+    const sourceRequirements = extractExplicitRequirements(documents);\n    let state = { sourceRequirements };
     const results = [];
     for (const agent of agents) {
       res.write(JSON.stringify({ type: "agent:start", id: agent.id, name: agent.name }) + "\n");
