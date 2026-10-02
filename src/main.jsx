@@ -108,7 +108,12 @@ function App() {
         });
         const extractedResult = await response.json();
         if (!response.ok) throw new Error(extractedResult.error || `Could not process ${file.name}.`);
-        extracted.push({ name: file.name, text: extractedResult.text || "" });
+        let extractedText = extractedResult.text || "";
+        if (file.type === "text/plain") {
+          const rawText = await file.text();
+          if (rawText.trim()) extractedText = rawText.slice(0, 30000);
+        }
+        extracted.push({ name: file.name, text: extractedText });
       }
       setFiles(prev => [...prev, ...extracted].slice(0, 5));
       setDocuments(prev => {
@@ -240,18 +245,25 @@ function App() {
   };
 
   const extractRequiredItems = (text) => {
-    const lines = String(text || "").split(/\r?\n/).map(line => line.replace(/^[#*\s]+|[*\s]+$/g, "").trim()).filter(Boolean);
-    const start = lines.findIndex(line => /^(required documents|documents required|required documents and information|documents\/information required)\s*:?[\s*]*$/i.test(line));
+    const normalize = (line) => String(line || "")
+      .replace(/\uFEFF/g, "")
+      .replace(/^\s+|\s+$/g, "")
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/^\*+\s*/, "")
+      .replace(/\s*\*+$/, "")
+      .trim();
+    const lines = String(text || "").split(/\r?\n/).map(normalize).filter(Boolean);
+    const start = lines.findIndex(line => /^(required documents|documents required|required documents and information|documents\/information required)\s*:?\s*$/i.test(line));
     if (start < 0) return [];
     const items = [];
     for (let i = start + 1; i < lines.length; i += 1) {
-      const line = lines[i];
-      if (/^(eligibility requirements|eligibility|applicant statement|important|testing note|note|deadline|application deadline)\b/i.test(line)) break;
+      const line = normalize(lines[i]);
+      if (/^(eligibility requirements|eligibility|applicant statement|important|testing note|note|deadline|application deadline)\s*:?/i.test(line)) break;
       const match = line.match(/^(?:[-•*]|\d+[.)])\s+(.+)$/);
       if (match) items.push(match[1].trim());
       else if (items.length && !/^[A-Z][^:]{0,70}:/.test(line)) items[items.length - 1] += " " + line;
     }
-    return [...new Set(items)].slice(0, 30);
+    return [...new Set(items.map(item => item.replace(/\s+/g, " ").trim()).filter(Boolean))].slice(0, 30);
   };
 
   const agentState = (id) => liveAgents[id] || "queued";
@@ -264,7 +276,7 @@ function App() {
   const draftPlaceholders = Array.from(new Set(((draftResult?.output || "").match(/\[MISSING:\s*[^\]]+\]/gi) || []).map(item => item.trim()))).slice(0, 12);
   const rawMissingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
   const sourceRequirements = extractRequiredItems(documents);
-  const sourceSaysDocsNotAttached = /required documents[^\n]*(?:not|have not|haven.t)[^\n]*(?:attached|provided|submitted)/i.test(documents);
+  const sourceSaysDocsNotAttached = /required documents[^\n]*(?:not|have not|haven['’]?t)[^\n]*(?:attached|provided|submitted)/i.test(documents);
   const missingItems = sourceRequirements.length && sourceSaysDocsNotAttached ? sourceRequirements : rawMissingItems;
   const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
   const draftReady = Boolean(draftResult?.output) && draftPlaceholders.length === 0;
@@ -352,7 +364,7 @@ function App() {
           </div>
 
           {result && <div className="metricrow">
-            <div className="metric"><b>{requirements.filter(x => x.status === "Found in provided material").length}</b><span>Evidence-backed requirements</span></div>
+            <div className="metric"><b>{sourceRequirements.length}</b><span>Evidence-backed requirements</span></div>
             <div className="metric"><b>{missingItems.length}</b><span>Missing draft items</span></div>
             <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified").length}</b><span>Verified claims</span></div>
             <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
