@@ -63,25 +63,37 @@ const schema = {
   required: ["summary", "findings", "missing", "evidence", "output", "nextSteps"]
 };
 
+function normalizeSourceLine(line) {
+  return String(line || "")
+    .replace(/\uFEFF/g, "")
+    .replace(/^\s+|\s+$/g, "")
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\*+\s*/, "")
+    .replace(/\s*\*+$/, "")
+    .trim();
+}
+
 function extractExplicitRequirements(documents) {
   const text = String(documents || "");
-  const lines = text.split(/\r?\n/).map(line => line.replace(/^\s+|\s+$/g, "").replace(/^\*+|\*+$/g, "").trim()).filter(Boolean);
-  const headingIndex = lines.findIndex(line => /^(required documents|documents required|required documents and information|documents\/information required)\s*:?[\s*]*$/i.test(line));
+  const lines = text.split(/\r?\n/).map(normalizeSourceLine).filter(Boolean);
+  const headingIndex = lines.findIndex(line =>
+    /^(required documents|documents required|required documents and information|documents\/information required)\s*:?[\s]*$/i.test(line)
+  );
   if (headingIndex < 0) return [];
   const items = [];
   for (let i = headingIndex + 1; i < lines.length; i += 1) {
-    const line = lines[i].replace(/^\*+|\*+$/g, "").trim();
-    if (/^(eligibility requirements|eligibility|applicant statement|important|testing note|note|deadline|application deadline)\b/i.test(line)) break;
+    const line = normalizeSourceLine(lines[i]);
+    if (/^(eligibility requirements|eligibility|applicant statement|important|testing note|note|deadline|application deadline)\s*:?[\s]*/i.test(line)) break;
     const match = line.match(/^(?:[-•*]|\d+[.)])\s+(.+)$/);
     if (match) {
       items.push(match[1].trim());
       continue;
     }
-    if (items.length && !/:\s*$/.test(line) && !/^[A-Z][^:]{0,70}:/.test(line)) {
+    if (items.length && !/^[A-Z][^:]{0,70}:/.test(line)) {
       items[items.length - 1] = items[items.length - 1] + " " + line;
     }
   }
-  return Array.from(new Set(items)).slice(0, 30);
+  return Array.from(new Set(items.map(item => item.replace(/\s+/g, " ").trim()).filter(Boolean))).slice(0, 30);
 }
 
 function getUploadedDocumentNames(documents) {
