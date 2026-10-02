@@ -1,12 +1,17 @@
 import express from "express";
 import cors from "cors";
 import { GoogleGenAI, Type } from "@google/genai";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
-const port = process.env.PORT || 8080;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const port = process.env.PORT || 3000;
 const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 app.use(cors());
 app.use(express.json({ limit: "55mb" }));
+app.use(express.static(path.join(__dirname, "..", "dist")));
 
 const MAX_TASK_CHARS = 12000;
 const MAX_DOCUMENT_CHARS = 120000;
@@ -220,4 +225,11 @@ app.post("/api/complete-draft", async (req, res) => {
   }
 });
 
-app.listen(port, () => console.log("KaroAI API listening on port " + port));
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/")) return next();
+  res.sendFile(path.join(__dirname, "..", "dist", "index.html"), error => {
+    if (error) next(error);
+  });
+});
+
+app.listen(port, () => console.log("KaroAI ActionFlow listening on port " + port));
