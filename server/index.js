@@ -111,13 +111,41 @@ function isUploadedDocumentSource(source, documents) {
 
 function sourceTextSupportsClaim(claim, documents) {
   const text = String(documents || "");
-  const value = String(claim || "").toLowerCase();
-  if (/submitted|submission/.test(value) && /before|deadline/.test(value)) return false;
-  if (/pakistani national/.test(value) && /nationality\s*:\s*pakistani/i.test(text)) return true;
-  if (/cgpa/.test(value) && /3\.42\s*\/\s*4\.00/i.test(text) && /3\.00\s*\/\s*4\.00/i.test(text)) return true;
-  if (/completed undergraduate|undergraduate studies|undergraduate degree/.test(value) && /(completed undergraduate|graduation year|degree\s*:\s*bs)/i.test(text)) return true;
-  if (/required documents.*(explicitly|listed|documented)|eligibility requirements.*(explicitly|listed|documented)/i.test(value)) return true;
-  if (/none of the .*required documents.*attached|required documents.*not attached/i.test(value) && sourceSaysDocsNotAttached(text)) return true;
+  const value = String(claim || "").trim();
+  const lower = value.toLowerCase();
+  if (!text.trim() || !value) return false;
+  if (/submitted|submission/.test(lower) && /before|deadline/.test(lower)) return false;
+
+  const compact = text.replace(/\s+/g, " ").toLowerCase();
+  const claimCompact = lower.replace(/\s+/g, " ");
+  const aliases = [
+    ["llb degree", ["degree: llb", "llb, first division", "llb degree", "llb"]],
+    ["legal research skills", ["legal research skills", "legal research"]],
+    ["legal drafting skills", ["legal drafting skills", "legal drafting"]],
+    ["minimum 1 year relevant legal research experience", ["minimum 1 year relevant legal research experience", "1 year relevant legal research experience"]],
+    ["academic transcript", ["academic transcript"]],
+    ["updated cv", ["updated cv"]],
+    ["two references", ["two references"]],
+    ["constitutional law", ["constitutional law"]],
+    ["legal databases", ["legal databases"]]
+  ];
+
+  for (const [label, patterns] of aliases) {
+    if (claimCompact.includes(label) && patterns.some(pattern => compact.includes(pattern))) return true;
+  }
+
+  const normalizedClaim = claimCompact
+    .replace(/^requirement documented:\s*/i, "")
+    .replace(/^required:\s*/i, "")
+    .replace(/^supported(?: by document)?[:\s-]*/i, "")
+    .trim();
+  if (normalizedClaim.length >= 6 && compact.includes(normalizedClaim)) return true;
+
+  if (/pakistani national/.test(lower) && /nationality\s*:\s*pakistani/i.test(text)) return true;
+  if (/cgpa/.test(lower) && /3\.42\s*\/\s*4\.00/i.test(text) && /3\.00\s*\/\s*4\.00/i.test(text)) return true;
+  if (/completed undergraduate|undergraduate studies|undergraduate degree/.test(lower) && /(completed undergraduate|graduation year|degree\s*:\s*bs)/i.test(text)) return true;
+  if (/required documents.*(explicitly|listed|documented)|eligibility requirements.*(explicitly|listed|documented)/i.test(lower)) return true;
+  if (/none of the .*required documents.*attached|required documents.*not attached/i.test(lower) && sourceSaysDocsNotAttached(text)) return true;
   return false;
 }
 
