@@ -359,7 +359,7 @@ function App() {
 
   const statusForRequirement = (status) => {
     const value = String(status || "").toLowerCase();
-    if (value === "met") return "Met";
+    if (value === "met") return "Supported";
     if (value === "gap") return "Gap";
     if (value === "missing") return "Missing";
     return "Unresolved";
@@ -517,7 +517,7 @@ function App() {
               <div className="panelhead"><div><h3>Requirements & gaps</h3><small>What the workflow found so far</small></div><ClipboardCheck size={18}/></div>
               {!requirements.length ? <div className="empty">{running ? "Requirements will appear as agents complete their analysis." : "No requirements were returned."}</div> :
                 requirements.map((item, i) => {
-                  const badgeClass = item.status === "Missing" || item.status === "Gap" ? "missing" : item.status === "Not documented" || item.status === "Unresolved" ? "review" : "verified";
+                  const badgeClass = item.status === "Missing" || item.status === "Gap" ? "missing" : item.status === "Not documented" || item.status === "Unresolved" || item.status === "Not enough evidence" ? "review" : "verified";
                   return <div className="task" key={i}><div><b>{item.text}</b><span>{item.kind}{item.detail ? " · " + item.detail : ""}</span></div><span className={`badge ${badgeClass}`}>{item.status}</span></div>;
                 })}
             </section>
@@ -579,6 +579,18 @@ function App() {
           {copyNotice && <div className="notice copyNotice"><CheckCircle2 size={17}/><div><b>Update</b><span>{copyNotice}</span></div></div>}
 
           {result?.final?.output && <section className="panel outputpanel"><div className="panelhead"><div><h3>AI-prepared result</h3><small>Final workflow output</small></div><button className="iconbtn" onClick={copyFinalResult} title="Copy result" aria-label="Copy result"><Copy size={16}/></button></div><div className="drafttext">{result.final.output}</div></section>}
+
+          {result && <section className="panel">
+            <div className="panelhead"><div><h3>Final assessment</h3><small>Deterministic summary from the supplied evidence</small></div><ShieldCheck size={18}/></div>
+            <div className="metricrow">
+              <div className="metric"><b>{requiredAnalysis.length}</b><span>Total Required</span></div>
+              <div className="metric"><b>{requiredAnalysis.filter(item => String(item.status).toLowerCase() === "met").length}</b><span>Supported Required</span></div>
+              <div className="metric"><b>{gapAnalysis.length}</b><span>Actual gaps</span></div>
+              <div className="metric"><b>{missingDocuments.length}</b><span>Missing required documents</span></div>
+              <div className="metric"><b>{preferredAnalysis.filter(item => item.status === "Documented").length}</b><span>Preferred supported</span></div>
+            </div>
+            <div className="sourceintro"><b>Application deadline:</b> {result.deadline || "Not provided in the supplied documents."}</div>
+          </section>
 
           {result && <section className="panel completionpanel">
             <div className="completionicon"><CheckCircle2 size={22}/></div>
