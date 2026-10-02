@@ -245,7 +245,6 @@ app.post("/api/extract-document", async (req, res) => {
   const { name, mimeType, data } = req.body || {};
   try { validateUploadPayload(mimeType, data); } catch (error) { return res.status(400).json({ error: error.message }); }
   try {
-    const { name, mimeType, data } = req.body || {};
     if (!name || !data) return res.status(400).json({ error: "A document is required." });
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
 
