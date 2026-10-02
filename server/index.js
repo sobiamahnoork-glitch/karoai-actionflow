@@ -317,7 +317,8 @@ function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDo
     if (isExperienceRequirement(req)) {
       const requiresOneYear = /1\s*year|one\s*year|12\s*months?/.test(lowerReq);
       const candidateHasSixMonths = /6\s*months?|six\s*months?/.test(lowerText);
-      const candidateHasOneYear = /1\s*year|one\s*year|12\s*months?/.test(lowerText) && /candidate|experience\s*:\s*1\s*year/i.test(text);
+      // Only treat one year as candidate evidence when it is explicitly attached to the candidate's experience, not when it appears in the job requirement itself.
+      const candidateHasOneYear = /(?:candidate\s+(?:has|has\s+documented|documents|reports)\s+|experience\s*:\s*|experience\s+of\s+|documented\s+experience\s+(?:of\s+))(?:(?:at\s+least\s+)?1\s*year|one\s*year|12\s*months?)/i.test(text);
 
       if (requiresOneYear && candidateHasSixMonths && !candidateHasOneYear) {
         return {
