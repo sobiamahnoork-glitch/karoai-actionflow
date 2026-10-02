@@ -264,13 +264,14 @@ function App() {
   const draftPlaceholders = Array.from(new Set(((draftResult?.output || "").match(/\[MISSING:\s*[^\]]+\]/gi) || []).map(item => item.trim()))).slice(0, 12);
   const rawMissingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
   const sourceRequirements = extractRequiredItems(documents);
-  const missingItems = sourceRequirements.length ? sourceRequirements : rawMissingItems;
+  const sourceSaysDocsNotAttached = /required documents[^\n]*(?:not|have not|haven.t)[^\n]*(?:attached|provided|submitted)/i.test(documents);
+  const missingItems = sourceRequirements.length && sourceSaysDocsNotAttached ? sourceRequirements : rawMissingItems;
   const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
   const draftReady = Boolean(draftResult?.output) && draftPlaceholders.length === 0;
 
   const hasSupportingEvidence = Boolean(documents.trim());
   const requirements = [
-    ...(sourceRequirements.length ? sourceRequirements : (requirementResult?.findings || [])).map(text => ({ text, status: "Requirement documented" })),
+    ...(sourceRequirements.length ? sourceRequirements : (requirementResult?.findings || [])).map(text => ({ text, status: sourceSaysDocsNotAttached ? "Missing" : "Requirement documented" })),
     ...(sourceRequirements.length ? [] : missingItems).map(text => ({ text, status: "Missing" })),
     ...(verificationResult?.findings || []).map(text => ({ text, status: "Needs Review" }))
   ].slice(0, 10);
