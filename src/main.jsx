@@ -275,7 +275,9 @@ function App() {
 
   const draftPlaceholders = Array.from(new Set(((draftResult?.output || "").match(/\[MISSING:\s*[^\]]+\]/gi) || []).map(item => item.trim()))).slice(0, 12);
   const rawMissingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
-  const sourceRequirements = extractRequiredItems(documents);
+  const sourceRequirements = Array.isArray(result?.sourceRequirements) && result.sourceRequirements.length
+    ? result.sourceRequirements
+    : extractRequiredItems(documents);
   const sourceSaysDocsNotAttached = /required documents[^\n]*(?:not|have not|haven['’]?t)[^\n]*(?:attached|provided|submitted)/i.test(documents);
   const missingItems = sourceRequirements.length && sourceSaysDocsNotAttached ? sourceRequirements : rawMissingItems;
   const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
