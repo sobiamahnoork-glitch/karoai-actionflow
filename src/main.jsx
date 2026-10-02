@@ -103,10 +103,24 @@ function App() {
         });
         const response = await fetch("/api/extract-document", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
           body: JSON.stringify({ name: file.name, mimeType: file.type || "application/pdf", data })
         });
-        const extractedResult = await response.json();
+        const extractedContentType = response.headers.get("content-type") || "";
+        const extractedRaw = await response.text();
+        let extractedResult;
+        try {
+          extractedResult = extractedContentType.includes("application/json") ? JSON.parse(extractedRaw) : null;
+        } catch {
+          extractedResult = null;
+        }
+        if (!extractedResult) {
+          throw new Error(
+            response.status === 404
+              ? "Document API was not found. The backend is not running or the current deployment is using an outdated build."
+              : "Document API returned an unexpected response. Please restart or resync the current GitHub build."
+          );
+        }
         if (!response.ok) throw new Error(extractedResult.error || `Could not process ${file.name}.`);
         let extractedText = extractedResult.text || "";
         if (file.type === "text/plain") {
@@ -134,10 +148,27 @@ function App() {
     try {
       const response = await fetch("/api/run-workflow-stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({ task: task.trim(), documents })
       });
-      if (!response.ok || !response.body) throw new Error("Could not start the workflow.");
+      const workflowContentType = response.headers.get("content-type") || "";
+      if (!response.ok || !response.body) {
+        const rawError = await response.text();
+        let parsedError = null;
+        try { parsedError = JSON.parse(rawError); } catch {}
+        throw new Error(
+          parsedError?.error ||
+          (response.status === 404
+            ? "Workflow API was not found. The backend is not running or the current deployment is using an outdated build."
+            : "Could not start the workflow.")
+        );
+      }
+      if (!workflowContentType.includes("application/x-ndjson")) {
+        const rawResponse = await response.text();
+        let parsedResponse = null;
+        try { parsedResponse = JSON.parse(rawResponse); } catch {}
+        throw new Error(parsedResponse?.error || "Workflow API returned an unexpected response. Please restart or resync the current GitHub build.");
+      }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -195,10 +226,14 @@ function App() {
     try {
       const response = await fetch("/api/complete-draft", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({ task, documents, workflow: result, answers: answered })
       });
-      const data = await response.json();
+      const contentType = response.headers.get("content-type") || "";
+      const raw = await response.text();
+      let data = null;
+      try { data = contentType.includes("application/json") ? JSON.parse(raw) : null; } catch {}
+      if (!data) throw new Error(response.status === 404 ? "Draft API was not found. The backend is not running or the current deployment is using an outdated build." : "Draft API returned an unexpected response.");
       if (!response.ok) throw new Error(data.error || "Could not prepare the revised draft.");
       const nextWorkflow = {
         ...result,
