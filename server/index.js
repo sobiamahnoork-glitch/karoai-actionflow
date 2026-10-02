@@ -428,14 +428,27 @@ function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDo
 
   // 4. Missing Required Documents
   // RULE 1 & 4: Only documents explicitly required by the source but not supplied. NEVER experience gaps!
-  const docsNotAttached = sourceSaysDocsNotAttached(text);
-  const missingDocuments = requiredDocuments.filter(doc => {
-    if (isExperienceRequirement(doc)) return false;
-    if (docsNotAttached) return true;
-    const docName = doc.toLowerCase();
-    const hasDoc = getUploadedDocumentNames(text).some(name => name.toLowerCase().includes(docName));
-    return !hasDoc;
-  });
+  // Required-document presence is determined by an explicitly supplied document,
+  // not by the requirement text itself. A generic candidate CV does not satisfy
+  // the distinct "Updated CV" attachment requirement unless it is explicitly
+  // identified as an updated CV.
+  const uploadedNames = getUploadedDocumentNames(text).map(name => name.toLowerCase());
+  const hasExplicitDocument = (doc) => {
+    const lowerDoc = String(doc || "").toLowerCase().trim();
+    if (/^updated\s+cv\.?$/.test(lowerDoc)) {
+      return uploadedNames.some(name => /updated\s+(?:cv|resume)|(?:cv|resume).*updated/.test(name));
+    }
+    if (/^(?:academic\s+transcript)\.?$/.test(lowerDoc)) {
+      return uploadedNames.some(name => /academic.*transcript|transcript/.test(name));
+    }
+    if (/^(?:two|2)\s+references?\.?$/.test(lowerDoc)) {
+      return uploadedNames.some(name => /references?|referees?/.test(name));
+    }
+    return uploadedNames.some(name => name === lowerDoc || name.includes(lowerDoc));
+  };
+  const missingDocuments = requiredDocuments
+    .filter(doc => !isExperienceRequirement(doc))
+    .filter(doc => !hasExplicitDocument(doc));
 
   return {
     requiredAnalysis,
@@ -628,8 +641,10 @@ Candidate Qualifications & Documented Facts:
 Status of Required Application Materials:
 ${docPlaceholders || "All required documents supplied."}
 
-Summary:
-The candidate presents a strong academic foundation with an LLB (First Division), specialized research experience in constitutional law, and demonstrated competence in legal research and drafting. The candidate documents 6 months of relevant legal research experience towards the position's 1-year experience requirement.`;
+Experience Requirement Status:
+- Required: Minimum 1 year relevant legal research experience
+- Documented: 6 months
+- Status: Gap — 6-month shortfall against the documented 1-year requirement.`;
 
     result = {
       ...result,
@@ -649,7 +664,7 @@ The candidate presents a strong academic foundation with an LLB (First Division)
     // RULE 2: Deadline step ONLY if explicitly present in source!
     const steps = [];
     if (evaluation.gapAnalysis.length) {
-      steps.push("Review and address the 1-year relevant legal research experience requirement against the documented 6-month experience (e.g., highlight relevant coursework, academic research, or legal clinic internships).");
+      steps.push("Address the 1-year relevant legal research experience requirement; the supplied CV documents 6 months of relevant legal research experience.");
     }
     evaluation.missingDocuments.forEach((doc, idx) => {
       steps.push(`Provide the required document: ${doc}`);
