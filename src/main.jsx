@@ -278,24 +278,49 @@ function App() {
   const sourceRequirements = Array.isArray(result?.sourceRequirements) && result.sourceRequirements.length
     ? result.sourceRequirements
     : extractRequiredItems(documents);
+
+  const extractEligibilityItems = (text) => {
+    const normalize = (line) => String(line || "")
+      .replace(/\uFEFF/g, "")
+      .replace(/^\s+|\s+$/g, "")
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/^\*+\s*/, "")
+      .replace(/\s*\*+$/, "")
+      .trim();
+    const lines = String(text || "").split(/\r?\n/).map(normalize).filter(Boolean);
+    const start = lines.findIndex(line => /^(eligibility requirements|eligibility)\s*:?\s*$/i.test(line));
+    if (start < 0) return [];
+    const items = [];
+    for (let i = start + 1; i < lines.length; i += 1) {
+      const line = normalize(lines[i]);
+      if (/^(required documents|documents required|documents\/information required|applicant statement|important|testing note|note)\s*:?/i.test(line)) break;
+      const match = line.match(/^(?:[-•*]|\d+[.)])\s+(.+)$/);
+      if (match) items.push(match[1].trim());
+      else if (items.length && !/^[A-Z][^:]{0,70}:/.test(line)) items[items.length - 1] += " " + line;
+    }
+    return [...new Set(items.map(item => item.replace(/\s+/g, " ").trim()).filter(Boolean))].slice(0, 20);
+  };
+
+  const eligibilityRequirements = extractEligibilityItems(documents);
   const sourceSaysDocsNotAttached = /required documents[^\n]*(?:not|have not|haven['’]?t)[^\n]*(?:attached|provided|submitted)/i.test(documents);
   const missingItems = sourceRequirements.length && sourceSaysDocsNotAttached ? sourceRequirements : rawMissingItems;
   const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
   const draftReady = Boolean(draftResult?.output) && draftPlaceholders.length === 0;
 
-  const hasSupportingEvidence = Boolean(documents.trim());
   const requirements = [
-    ...(sourceRequirements.length ? sourceRequirements : (requirementResult?.findings || [])).map(text => ({ text, status: sourceSaysDocsNotAttached ? "Missing" : "Requirement documented" })),
-    ...(sourceRequirements.length ? [] : missingItems).map(text => ({ text, status: "Missing" })),
-    ...(verificationResult?.findings || []).map(text => ({ text, status: "Needs Review" }))
-  ].slice(0, 10);
+    ...eligibilityRequirements.map(text => ({ text, status: "Supported by document" })),
+    ...sourceRequirements.map(text => ({ text: "Required document: " + text, status: sourceSaysDocsNotAttached ? "Missing" : "Documented" })),
+    ...(sourceRequirements.length ? [] : missingItems).map(text => ({ text, status: "Missing" }))
+  ].slice(0, 12);
 
   const evidence = [];
   const evidenceStatus = (status) => {
     const value = String(status || "Unverified").toLowerCase();
     if (value.includes("contradict")) return "Contradicted";
-    if (value.includes("externally verified")) return "Verified";\n    if (value === "verified" && /external|independent/i.test(String(status))) return "Verified";
+    if (value.includes("externally verified") || value === "verified") return "Verified";
     if (value.includes("missing")) return "Missing";
+    if (value.includes("supported by document") || value.includes("documented")) return "Supported by document";
+    if (value.includes("needs review")) return "Needs Review";
     return "Unverified";
   };
   for (const agent of workflowAgents) {
@@ -366,7 +391,7 @@ function App() {
           </div>
 
           {result && <div className="metricrow">
-            <div className="metric"><b>{sourceRequirements.length}</b><span>Evidence-backed requirements</span></div>
+            <div className="metric"><b>{eligibilityRequirements.length}</b><span>Documented eligibility requirements</span></div>
             <div className="metric"><b>{missingItems.length}</b><span>Missing draft items</span></div>
             <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified").length}</b><span>Verified claims</span></div>
             <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
@@ -441,10 +466,10 @@ function App() {
               <div className="panelhead"><div><h3>Evidence & verification</h3><small>Important claims and their source status</small></div><ShieldCheck size={18}/></div>
               {!evidence.length ? <div className="empty">{running ? "Verification evidence will appear here." : "No evidence items were returned."}</div> :
                 <div className="evidence">{evidence.slice(0, 12).map((item, i) => {
-                  const status = String(item.status || "unverified").toLowerCase();
-                  const verified = status.includes("verif");
-                  return <div className="evidenceitem" key={i}><div><b>{item.claim}</b><span>{item.source || "Source not specified"}</span></div><span className={`badge ${verified ? "verified" : "review"}`}>{item.status || "Unverified"}</span></div>;
-                })}</div>}
+                  const normalizedStatus = evidenceStatus(item.status);
+                  const badgeClass = normalizedStatus === "Missing" ? "missing" : normalizedStatus === "Verified" || normalizedStatus === "Supported by document" ? "verified" : "review";
+                  return <div className="evidenceitem" key={i}><div><b>{item.claim}</b><span>{item.source || "Source not specified"}</span></div><span className={`badge ${badgeClass}`}>{normalizedStatus}</span></div>;
+                })}</div>
             </section>
 
             <section className="panel">
