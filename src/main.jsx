@@ -253,7 +253,7 @@ function App() {
 
   const hasSupportingEvidence = Boolean(documents.trim());
   const requirements = [
-    ...(requirementResult?.findings || []).map(text => ({ text, status: hasSupportingEvidence ? "Found in provided material" : "Suggested" })),
+    ...(requirementResult?.findings || []).map(text => ({ text, status: hasSupportingEvidence ? "Requirement documented" : "Suggested" })),
     ...missingItems.map(text => ({ text, status: "Missing" })),
     ...(verificationResult?.findings || []).map(text => ({ text, status: "Needs Review" }))
   ].slice(0, 10);
