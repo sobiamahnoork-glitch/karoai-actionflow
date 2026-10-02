@@ -1,11 +1,11 @@
 {
   "name": "karoai-actionflow",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "npm run build && node server.js",
-    "api": "node server/index.js",
+    "api": "npm run build && node server/index.js",
     "build": "vite build",
     "lint": "vite build",
     "start": "npm run build && node server.js",
