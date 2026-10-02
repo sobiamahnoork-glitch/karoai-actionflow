@@ -336,17 +336,48 @@ function App() {
     return [...new Set(items.map(item => item.replace(/\s+/g, " ").trim()).filter(Boolean))].slice(0, 20);
   };
 
-  const eligibilityRequirements = extractEligibilityItems(documents);
-  const sourceSaysDocsNotAttached = /required documents[^\n]*(?:not|have not|haven['’]?t)[^\n]*(?:attached|provided|submitted)/i.test(documents);
-  const missingItems = sourceRequirements.length && sourceSaysDocsNotAttached ? sourceRequirements : rawMissingItems;
-  const needsReviewItems = Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
+  // Use the backend's structured evaluation so the UI stays aligned with the
+  // Requirement, Preferred, Gap, and Missing-Document analysis.
+  const requiredAnalysis = Array.isArray(result?.requiredAnalysis) ? result.requiredAnalysis : [];
+  const preferredAnalysis = Array.isArray(result?.preferredAnalysis) ? result.preferredAnalysis : [];
+  const gapAnalysis = Array.isArray(result?.gapAnalysis) ? result.gapAnalysis : [];
+  const missingDocuments = Array.isArray(result?.missingDocuments) ? result.missingDocuments : [];
+  const missingItems = draftPlaceholders.length
+    ? draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim())
+    : missingDocuments;
+  const needsReviewItems = gapAnalysis.length
+    ? gapAnalysis.map(item => item.description || item.requirement).slice(0, 8)
+    : Array.from(new Set((verificationResult?.findings || []).map(item => String(item).trim()).filter(Boolean))).slice(0, 8);
   const draftReady = Boolean(draftResult?.output) && draftPlaceholders.length === 0;
 
+  const statusForRequirement = (status) => {
+    const value = String(status || "").toLowerCase();
+    if (value === "met") return "Met";
+    if (value === "gap") return "Gap";
+    if (value === "missing") return "Missing";
+    return "Unresolved";
+  };
+
   const requirements = [
-    ...eligibilityRequirements.map(text => ({ text, status: "Supported by document" })),
-    ...sourceRequirements.map(text => ({ text: "Required document: " + text, status: sourceSaysDocsNotAttached ? "Missing" : "Documented" })),
-    ...(sourceRequirements.length ? [] : missingItems).map(text => ({ text, status: "Missing" }))
-  ].slice(0, 12);
+    ...requiredAnalysis.map(item => ({
+      text: item.requirement,
+      detail: item.candidateEvidence,
+      status: statusForRequirement(item.status),
+      kind: "Required"
+    })),
+    ...preferredAnalysis.map(item => ({
+      text: item.requirement,
+      detail: item.candidateEvidence,
+      status: item.status === "Documented" ? "Documented" : "Not documented",
+      kind: "Preferred"
+    })),
+    ...missingDocuments.map(text => ({
+      text: "Required document: " + text,
+      detail: "Not provided in supplied material",
+      status: "Missing",
+      kind: "Required document"
+    }))
+  ].slice(0, 30);
 
   const evidence = [];
   const evidenceStatus = (status) => {
@@ -426,8 +457,8 @@ function App() {
           </div>
 
           {result && <div className="metricrow">
-            <div className="metric"><b>{eligibilityRequirements.length}</b><span>Documented eligibility requirements</span></div>
-            <div className="metric"><b>{missingItems.length}</b><span>Missing draft items</span></div>
+            <div className="metric"><b>{requiredAnalysis.length}</b><span>Required eligibility requirements</span></div>
+            <div className="metric"><b>{missingDocuments.length}</b><span>Missing required documents</span></div>
             <div className="metric"><b>{evidence.filter(x => evidenceStatus(x.status) === "Verified").length}</b><span>Verified claims</span></div>
             <div className="metric"><b>{(workflowResult?.nextSteps || result?.final?.nextSteps || []).length}</b><span>Action steps</span></div>
           </div>}
@@ -478,7 +509,10 @@ function App() {
             <section className="panel">
               <div className="panelhead"><div><h3>Requirements & gaps</h3><small>What the workflow found so far</small></div><ClipboardCheck size={18}/></div>
               {!requirements.length ? <div className="empty">{running ? "Requirements will appear as agents complete their analysis." : "No requirements were returned."}</div> :
-                requirements.map((item, i) => <div className="task" key={i}><div><b>{item.text}</b><span>Requirement check</span></div><span className={`badge ${item.status === "Missing" ? "missing" : item.status === "Suggested" || item.status === "Needs Review" ? "review" : "verified"}`}>{item.status}</span></div>)}
+                requirements.map((item, i) => {
+                  const badgeClass = item.status === "Missing" || item.status === "Gap" ? "missing" : item.status === "Not documented" || item.status === "Unresolved" ? "review" : "verified";
+                  return <div className="task" key={i}><div><b>{item.text}</b><span>{item.kind}{item.detail ? " · " + item.detail : ""}</span></div><span className={`badge ${badgeClass}`}>{item.status}</span></div>;
+                })}
             </section>
 
             <section className="panel checklistpanel">
