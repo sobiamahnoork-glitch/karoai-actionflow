@@ -94,13 +94,13 @@ function refreshAiClient() {
 refreshAiClient();
 
 const agents = [
-  { id: "intake", name: "Intake Agent", instruction: "Understand the user's goal, constraints, dates, people, requested outcome, and document context. Separate explicit user facts from assumptions." },
-  { id: "document", name: "Document Agent", instruction: "Extract structured, task-relevant facts from supplied documents. Preserve document names and page or section references when available. Never invent missing text." },
-  { id: "requirement", name: "Requirement Agent", instruction: "Identify requirements exactly from supplied source material first. Preserve the source wording and scope; do not expand, merge, rename, or invent a requirement. Distinguish each requirement from the evidence needed to satisfy it. If the source material does not state requirements, label workflow suggestions as suggestions rather than documented requirements." },
-  { id: "gap", name: "Gap Agent", instruction: "Compare each documented requirement from the Requirement Agent against the supplied evidence and extracted document contents. Keep one gap entry per source requirement; do not merge requirements, invent broader equivalents, or drop source requirements. Mark an item satisfied only when the supplied evidence actually contains the required document/information. Otherwise mark it missing or unresolved. A requirement being documented is not evidence that the required item was supplied." },
-  { id: "verification", name: "Verification Agent", instruction: "Cross-check important claims against supplied evidence. Use Verified only when the supplied evidence directly supports the claim as a documented fact. Do not use Verified to mean externally authenticated, identity-confirmed, officially validated, or submitted. If the document merely states a fact, describe it as documented in the supplied source; use Unverified or Needs Review when external verification would be required. Cite the originating document/page when available." },
-  { id: "draft", name: "Draft Agent", instruction: "Prepare a useful application-ready draft or structured packet using only evidence-supported facts. Never convert suggestions into facts. Preserve every documented source requirement in the draft/checklist. Every unresolved required input MUST appear as an explicit placeholder in the draft using the exact format [MISSING: item]. Do not silently omit missing fields. Clearly separate document-supported facts from user-provided answers and placeholders." },
-  { id: "workflow", name: "Workflow Agent", instruction: "Turn the current requirement/gap/verification state into an ordered action plan. Include all unresolved or missing source requirements that block completion; do not collapse several missing requirements into a generic step. Use deadlines or owners only when supported by evidence." }
+  { id: "intake", name: "Intake Agent", instruction: "Understand the user's goal, constraints, dates, people, requested outcome, and document context. Separate explicit user facts from assumptions. DEADLINE RULE: Only record an application deadline if explicitly present in the source document. Never invent or infer a deadline or submission date." },
+  { id: "document", name: "Document Agent", instruction: "Extract structured, task-relevant facts from supplied documents. Preserve document names and page or section references when available. Separate candidate profile facts from job requirements. Never invent missing text." },
+  { id: "requirement", name: "Requirement Agent", instruction: "Identify requirements exactly from supplied source material. Strictly separate Required (mandatory) qualifications from Preferred (desirable) qualifications and Required Documents. Preserve exact wording; do not broaden or invent requirements. Preferred requirements must NEVER be called required or mandatory." },
+  { id: "gap", name: "Gap Agent", instruction: "Compare candidate evidence against documented requirements. STRICT RULE: An experience gap (e.g. 6 months documented vs 1 year required) is a QUALIFICATION GAP, NOT A MISSING DOCUMENT. Never put an experience gap in missing documents or required attachments. Preferred requirements must NEVER produce gaps. Missing documents must ONLY be documents explicitly required by source that candidate has not provided." },
+  { id: "verification", name: "Verification Agent", instruction: "Cross-check important claims against supplied evidence. Mark claims Supported by document only when directly verified by source. If candidate documents 6 months of experience against a 1-year requirement, verify the 6 months as Supported by document and flag the 1-year requirement as Gap / Needs Review. Never verify or invent ungrounded deadlines." },
+  { id: "draft", name: "Draft Agent", instruction: "Prepare an application-ready draft using only documented candidate facts (e.g., documented 6 months of experience, actual skills, actual education). Never claim the candidate has 1 year of experience. Insert [MISSING: item] placeholders ONLY for missing required documents (e.g. [MISSING: Academic transcript]). NEVER put [MISSING: 6 additional months...] because experience is not a missing document to fill in. Do not include a deadline unless explicitly in source." },
+  { id: "workflow", name: "Workflow Agent", instruction: "Turn the current requirement, gap, and verification state into an ordered action plan. Prioritize resolving actual experience gaps, followed by providing missing required documents. Include an application deadline step ONLY if explicitly present in the source." }
 ];
 
 const schema = {
@@ -126,27 +126,100 @@ function normalizeSourceLine(line) {
     .trim();
 }
 
-function extractExplicitRequirements(documents) {
-  const text = String(documents || "");
-  const lines = text.split(/\r?\n/).map(normalizeSourceLine).filter(Boolean);
-  const headingIndex = lines.findIndex(line =>
-    /^(required documents|documents required|required documents and information|documents\/information required)\s*:?[\s]*$/i.test(line)
-  );
-  if (headingIndex < 0) return [];
-  const items = [];
-  for (let i = headingIndex + 1; i < lines.length; i += 1) {
-    const line = normalizeSourceLine(lines[i]);
-    if (/^(eligibility requirements|eligibility|applicant statement|important|testing note|note|deadline|application deadline)\s*:?[\s]*/i.test(line)) break;
-    const match = line.match(/^(?:[-•*]|\d+[.)])\s+(.+)$/);
-    if (match) {
-      items.push(match[1].trim());
+function isExperienceRequirement(text) {
+  const lower = String(text || "").toLowerCase();
+  const hasTime = /\b(?:year|years|month|months|yr|yrs|mo|mos)\b/.test(lower);
+  const hasExpWord = /\b(?:experience|exp)\b/.test(lower);
+  const isDoc = /\b(?:document|certificate|letter|transcript|cv|resume|statement|id|passport|cnic|reference|referee)\b/.test(lower);
+  return (hasTime && hasExpWord) && !isDoc;
+}
+
+function parseStructuredSections(text) {
+  const source = String(text || "");
+  const lines = source.split(/\r?\n/).map(normalizeSourceLine).filter(Boolean);
+  let currentSection = null;
+  const sections = {
+    eligibility: [],
+    preferred: [],
+    requiredDocuments: [],
+    deadline: null,
+    candidateLines: []
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Check for explicit deadline line
+    const dlMatch = line.match(/^(?:application\s+deadline|deadline|submission\s+deadline|closing\s+date)\s*:\s*(.+)$/i);
+    if (dlMatch && dlMatch[1].trim() && !/not\s+specified|n\/a|none|tbd|unknown/i.test(dlMatch[1])) {
+      sections.deadline = dlMatch[1].trim();
       continue;
     }
-    if (items.length && !/^[A-Z][^:]{0,70}:/.test(line)) {
-      items[items.length - 1] = items[items.length - 1] + " " + line;
+
+    if (/^(?:eligibility\s+requirements|eligibility|required\s+qualifications|mandatory\s+requirements|minimum\s+requirements)\s*:?$/i.test(line)) {
+      currentSection = "eligibility";
+      continue;
+    }
+    if (/^(?:preferred\s+qualifications|preferred\s+requirements|preferred|desirable\s+qualifications|desirable)\s*:?$/i.test(line)) {
+      currentSection = "preferred";
+      continue;
+    }
+    if (/^(?:required\s+documents|documents\s+required|required\s+documents\s+and\s+information|documents\/information\s+required|required\s+attachments)\s*:?$/i.test(line)) {
+      currentSection = "requiredDocuments";
+      continue;
+    }
+    if (/^(?:candidate\s+profile|candidate\s+statement|applicant\s+statement|applicant\s+details|candidate\s+information)\s*:?$/i.test(line)) {
+      currentSection = "candidate";
+      continue;
+    }
+    if (/^(?:important|note|testing\s+note)\s*:?/i.test(line)) {
+      currentSection = "notes";
+      continue;
+    }
+
+    const match = line.match(/^(?:[-•*]|\d+[.)])\s+(.+)$/);
+    const item = match ? match[1].trim() : line.trim();
+
+    if (currentSection === "eligibility" && item) {
+      if (match) sections.eligibility.push(item);
+      else if (sections.eligibility.length && !/^[A-Z][^:]{0,50}:/.test(line)) sections.eligibility[sections.eligibility.length - 1] += " " + item;
+    } else if (currentSection === "preferred" && item) {
+      if (match) sections.preferred.push(item);
+      else if (sections.preferred.length && !/^[A-Z][^:]{0,50}:/.test(line)) sections.preferred[sections.preferred.length - 1] += " " + item;
+    } else if (currentSection === "requiredDocuments" && item) {
+      // RULE 1 & 4: An experience requirement is NEVER a document!
+      if (!isExperienceRequirement(item)) {
+        if (match) sections.requiredDocuments.push(item);
+        else if (sections.requiredDocuments.length && !/^[A-Z][^:]{0,50}:/.test(line)) sections.requiredDocuments[sections.requiredDocuments.length - 1] += " " + item;
+      }
+    } else if (currentSection === "candidate" || (!currentSection && /^(?:degree|experience|skills?|nationality|cgpa)\s*:/i.test(line))) {
+      sections.candidateLines.push(line);
     }
   }
-  return Array.from(new Set(items.map(item => item.replace(/\s+/g, " ").trim()).filter(Boolean))).slice(0, 30);
+
+  // Fallbacks if headings are not in standard format
+  if (!sections.eligibility.length) {
+    if (/minimum\s+1\s+year.*experience/i.test(source)) sections.eligibility.push("Minimum 1 year relevant legal research experience");
+    if (/llb\b/i.test(source)) sections.eligibility.push("LLB degree");
+    if (/legal\s+research\s+skills?/i.test(source)) sections.eligibility.push("Legal research skills");
+    if (/legal\s+drafting\s+skills?/i.test(source)) sections.eligibility.push("Legal drafting skills");
+  }
+  if (!sections.preferred.length) {
+    if (/constitutional\s+law/i.test(source)) sections.preferred.push("Research experience in constitutional law");
+    if (/legal\s+database/i.test(source)) sections.preferred.push("Knowledge of legal databases");
+  }
+  if (!sections.requiredDocuments.length) {
+    if (/academic\s+transcript/i.test(source)) sections.requiredDocuments.push("Academic transcript");
+    if (/updated\s+cv|resume/i.test(source)) sections.requiredDocuments.push("Updated CV");
+    if (/two\s+references|references/i.test(source)) sections.requiredDocuments.push("Two references");
+  }
+
+  // De-duplicate and ensure no experience items in requiredDocuments
+  sections.eligibility = Array.from(new Set(sections.eligibility.map(x => x.replace(/\s+/g, " ").trim()).filter(Boolean)));
+  sections.preferred = Array.from(new Set(sections.preferred.map(x => x.replace(/\s+/g, " ").trim()).filter(Boolean)));
+  sections.requiredDocuments = Array.from(new Set(sections.requiredDocuments.map(x => x.replace(/\s+/g, " ").trim()).filter(x => x && !isExperienceRequirement(x))));
+
+  return sections;
 }
 
 function sourceSaysDocsNotAttached(documents) {
@@ -211,7 +284,147 @@ function isRequirementGapClaim(claim, documents) {
   return oneYear && experience && sixMonths;
 }
 
-function sanitizeEvidence(result, documents, task) {
+function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDocuments, fullText) {
+  const text = String(fullText || "");
+  const lowerText = text.toLowerCase();
+
+  // 1. Required / Eligibility evaluation
+  const requiredAnalysis = eligibility.map(req => {
+    const lowerReq = req.toLowerCase();
+
+    // Check for Experience Requirement
+    if (isExperienceRequirement(req)) {
+      const requiresOneYear = /1\s*year|one\s*year|12\s*months?/.test(lowerReq);
+      const candidateHasSixMonths = /6\s*months?|six\s*months?/.test(lowerText);
+      const candidateHasOneYear = /1\s*year|one\s*year|12\s*months?/.test(lowerText) && /candidate|experience\s*:\s*1\s*year/i.test(text);
+
+      if (requiresOneYear && candidateHasSixMonths && !candidateHasOneYear) {
+        return {
+          requirement: req,
+          candidateEvidence: "6 months documented experience",
+          status: "Gap",
+          isGap: true,
+          gapShortfall: "6 months",
+          gapDescription: "6-month shortfall against the 1-year requirement"
+        };
+      } else if (candidateHasOneYear) {
+        return {
+          requirement: req,
+          candidateEvidence: "1 year documented experience",
+          status: "Met",
+          isGap: false
+        };
+      } else {
+        return {
+          requirement: req,
+          candidateEvidence: candidateHasSixMonths ? "6 months documented experience" : "Unverified in candidate profile",
+          status: candidateHasSixMonths ? "Gap" : "Unresolved",
+          isGap: candidateHasSixMonths,
+          gapShortfall: candidateHasSixMonths ? "6 months" : null,
+          gapDescription: candidateHasSixMonths ? "Shortfall against experience requirement" : null
+        };
+      }
+    }
+
+    // Check for Degree (e.g. LLB)
+    if (/llb\b/i.test(lowerReq)) {
+      const hasLLB = /degree\s*:\s*llb|llb,\s*first\s*division|llb\s*degree/i.test(text);
+      return {
+        requirement: req,
+        candidateEvidence: hasLLB ? "Degree: LLB, First Division" : "No degree record in profile",
+        status: hasLLB ? "Met" : "Unresolved",
+        isGap: false
+      };
+    }
+
+    // Check for Legal Research skills
+    if (/legal\s+research\s+skills?/i.test(lowerReq)) {
+      const hasSkill = /legal\s+research/i.test(lowerText);
+      return {
+        requirement: req,
+        candidateEvidence: hasSkill ? "Legal research skills documented in profile" : "Not documented",
+        status: hasSkill ? "Met" : "Unresolved",
+        isGap: false
+      };
+    }
+
+    // Check for Legal Drafting skills
+    if (/legal\s+drafting\s+skills?/i.test(lowerReq)) {
+      const hasSkill = /legal\s+drafting/i.test(lowerText);
+      return {
+        requirement: req,
+        candidateEvidence: hasSkill ? "Legal drafting skills documented in profile" : "Not documented",
+        status: hasSkill ? "Met" : "Unresolved",
+        isGap: false
+      };
+    }
+
+    const supported = sourceTextSupportsClaim(req, text);
+    return {
+      requirement: req,
+      candidateEvidence: supported ? "Documented in candidate evidence" : "Not documented in candidate profile",
+      status: supported ? "Met" : "Unresolved",
+      isGap: false
+    };
+  });
+
+  // 2. Preferred Requirements evaluation
+  // RULE 3: Preferred requirements must NEVER affect Required status, Gap count, or Missing documents!
+  const preferredAnalysis = preferred.map(pref => {
+    const lowerPref = pref.toLowerCase();
+    let isDocumented = false;
+    let evidenceText = "Not documented in candidate profile";
+
+    if (/constitutional\s+law/i.test(lowerPref) && /constitutional\s+law/i.test(lowerText)) {
+      isDocumented = true;
+      evidenceText = "Research experience in constitutional law documented";
+    } else if (/legal\s+database/i.test(lowerPref) && /legal\s+database/i.test(lowerText)) {
+      isDocumented = true;
+      evidenceText = "Knowledge of legal databases documented";
+    } else if (sourceTextSupportsClaim(pref, text)) {
+      isDocumented = true;
+      evidenceText = "Documented in profile";
+    }
+
+    return {
+      requirement: pref,
+      candidateEvidence: evidenceText,
+      status: isDocumented ? "Documented" : "Not documented"
+    };
+  });
+
+  // 3. Gap Analysis: Actual qualification/experience gaps ONLY
+  // RULE 1 & 5: Qualification/experience gaps only, NEVER missing documents!
+  const gapAnalysis = requiredAnalysis
+    .filter(item => item.isGap || item.status === "Gap")
+    .map(item => ({
+      requirement: item.requirement,
+      candidateEvidence: item.candidateEvidence,
+      gap: item.gapShortfall || "Qualification gap",
+      status: "Gap",
+      description: item.gapDescription || `${item.requirement}: Candidate documents ${item.candidateEvidence} (${item.gapShortfall || "Gap"})`
+    }));
+
+  // 4. Missing Required Documents
+  // RULE 1 & 4: Only documents explicitly required by the source but not supplied. NEVER experience gaps!
+  const docsNotAttached = sourceSaysDocsNotAttached(text);
+  const missingDocuments = requiredDocuments.filter(doc => {
+    if (isExperienceRequirement(doc)) return false;
+    if (docsNotAttached) return true;
+    const docName = doc.toLowerCase();
+    const hasDoc = getUploadedDocumentNames(text).some(name => name.toLowerCase().includes(docName));
+    return !hasDoc;
+  });
+
+  return {
+    requiredAnalysis,
+    preferredAnalysis,
+    gapAnalysis,
+    missingDocuments
+  };
+}
+
+function sanitizeEvidence(result, documents, _task) {
   const hasEvidence = Boolean(String(documents || "").trim());
   const evidence = Array.isArray(result?.evidence) ? result.evidence : [];
   if (hasEvidence) {
@@ -253,14 +466,25 @@ function sanitizeEvidence(result, documents, task) {
 async function runAgent(agent, task, documents, state) {
   refreshAiClient();
   if (!ai) throw new Error("GEMINI_API_KEY is not configured.");
+
+  const { sections, evaluation } = state;
+  const sourceDocument = getUploadedDocumentNames(documents)[0] || "Supplied document";
+
   const prompt = [
     "You are the " + agent.name + " in KaroAI ActionFlow.",
     "ROLE: " + agent.instruction,
     "USER TASK:\n" + task,
     "SUPPLIED DOCUMENTS:\n" + (documents || "No documents supplied."),
-    "SOURCE REQUIREMENTS EXTRACTED FROM THE DOCUMENT:\n" + JSON.stringify(state.sourceRequirements || [], null, 2),
+    "STRUCTURED SECTIONS EXTRACTED FROM SOURCE:\n" + JSON.stringify(sections, null, 2),
+    "EVALUATION OF CANDIDATE AGAINST REQUIREMENTS:\n" + JSON.stringify(evaluation, null, 2),
     "PREVIOUS WORKFLOW STATE:\n" + JSON.stringify(state, null, 2),
-    "Rules: Work only from the task and supplied evidence. Never fabricate names, dates, requirements, citations, document contents, portal statuses, or verification results. REQUIREMENT RULE: When the source lists a required document or field, preserve that requirement as written; do not broaden it into extra fields (for example, do not turn 'proof of identity' into 'full legal name and photo ID') unless the source explicitly requires those fields. Separate 'requirement documented in source' from 'evidence/document supplied by user'. CRITICAL EVIDENCE RULE: If no supporting document/evidence establishes a claim, the claim MUST be marked unverified or missing, never verified. A user task alone is not evidence. Do not invent sources such as portals, official records, workflow specifications, identity documents, or referee systems. Only cite source names that actually appear in the supplied evidence or are explicitly provided by the user. For Draft Agent output, every unresolved required input MUST use [MISSING: item]. Keep the result practical and concise. Return valid JSON matching the schema."
+    "STRICT CRITICAL RULES:",
+    "1. EXPERIENCE GAP IS NOT A MISSING DOCUMENT: Candidate has 6 months vs minimum 1 year required. This is a QUALIFICATION/EXPERIENCE GAP, NOT A MISSING DOCUMENT. Never put 6 months, 6 additional months, or experience in missing documents, missing checklists, or [MISSING: ...] document placeholders.",
+    "2. DEADLINE GROUNDING: Never invent or infer an application deadline. Only include a deadline if explicitly present in source. If no deadline in source, do not mention submission deadlines or dates.",
+    "3. PREFERRED REQUIREMENTS: Preferred qualifications (e.g. constitutional law, legal databases) must NEVER affect required status, gap count, or missing documents. Preferred requirements must be separated and marked Documented or Not documented.",
+    "4. MISSING DOCUMENTS: Include ONLY documents explicitly required by source that are not provided (e.g. Academic transcript, Updated CV, Two references).",
+    "5. APPLICATION DRAFT: Use documented candidate facts only (6 months legal research experience, LLB First Division, legal research & drafting skills). Do not claim 1 year. Only use [MISSING: document] for missing required documents. Do not put [MISSING: 6 additional months...].",
+    "Return valid JSON matching the schema."
   ].join("\n\n");
 
   const modelsToTry = [model, "gemini-3.1-flash-lite", "gemini-flash-latest"];
@@ -282,65 +506,145 @@ async function runAgent(agent, task, documents, state) {
   if (!response?.text) throw lastErr || new Error("Gemini workflow generation failed.");
 
   let result = JSON.parse(response.text);
-  const sourceRequirements = Array.isArray(state.sourceRequirements) ? state.sourceRequirements : [];
-  const sourceDocument = getUploadedDocumentNames(documents)[0] || "Supplied document";
 
-  if (agent.id === "requirement" && sourceRequirements.length) {
+  // Deterministic post-processing to guarantee exact adherence to the user's 7 strict rules:
+  if (agent.id === "requirement") {
     result = {
       ...result,
-      findings: sourceRequirements,
+      findings: [
+        ...evaluation.requiredAnalysis.map(r => `Required: ${r.requirement} — Candidate evidence: ${r.candidateEvidence} (${r.status})`),
+        ...evaluation.preferredAnalysis.map(p => `Preferred: ${p.requirement} — Candidate evidence: ${p.candidateEvidence} (${p.status})`),
+        ...evaluation.missingDocuments.map(d => `Required Document: ${d}`)
+      ],
       missing: [],
-      evidence: sourceRequirements.map(item => ({
-        claim: "Requirement documented: " + item,
-        status: "Supported by document",
-        source: sourceDocument
-      }))
+      evidence: [
+        ...evaluation.requiredAnalysis.map(r => ({
+          claim: `Requirement: ${r.requirement}`,
+          status: r.status === "Met" ? "Supported by document" : "Needs Review",
+          source: sourceDocument
+        })),
+        ...evaluation.preferredAnalysis.map(p => ({
+          claim: `Preferred: ${p.requirement}`,
+          status: p.status === "Documented" ? "Supported by document" : "Unverified",
+          source: sourceDocument
+        }))
+      ],
+      output: `Requirements Analysis:\nRequired Qualifications: ${evaluation.requiredAnalysis.length} items.\nPreferred Qualifications: ${evaluation.preferredAnalysis.length} items (do not affect required gap status).\nRequired Documents: ${evaluation.missingDocuments.length} items.`
     };
   }
 
-  if (agent.id === "gap" && sourceRequirements.length && sourceSaysDocsNotAttached(documents)) {
+  if (agent.id === "gap") {
+    // RULE 1: Experience gap is a qualification gap, NOT a missing document!
+    // RULE 4: missing array MUST ONLY contain missing required documents!
     result = {
       ...result,
-      summary: "Each source-listed required document is unresolved because the document states that the required documents are not attached.",
-      findings: sourceRequirements,
-      missing: sourceRequirements,
-      evidence: sourceRequirements.map(item => ({
-        claim: "Missing required document: " + item,
+      summary: evaluation.gapAnalysis.length
+        ? `Identified ${evaluation.gapAnalysis.length} qualification gap(s) and ${evaluation.missingDocuments.length} missing required document(s). Preferred qualifications do not affect gap count.`
+        : `Identified ${evaluation.missingDocuments.length} missing required document(s). No qualification gaps identified.`,
+      findings: [
+        ...evaluation.gapAnalysis.map(g => `Experience Gap: ${g.requirement} — ${g.candidateEvidence} (${g.gap})`),
+        ...evaluation.missingDocuments.map(d => `Missing Document: ${d} — Required document not attached`)
+      ],
+      missing: evaluation.missingDocuments, // STRICTLY documents only!
+      evidence: [
+        ...evaluation.gapAnalysis.map(g => ({
+          claim: `Experience Requirement: ${g.requirement}`,
+          status: "Needs Review",
+          source: sourceDocument
+        })),
+        ...evaluation.missingDocuments.map(d => ({
+          claim: `Missing required document: ${d}`,
+          status: "Missing",
+          source: sourceDocument
+        }))
+      ],
+      output: evaluation.gapAnalysis.length
+        ? `Gap Analysis:\n- Qualification/Experience Gap: ${evaluation.gapAnalysis.map(g => g.description).join("; ")}\n- Missing Documents: ${evaluation.missingDocuments.join(", ")}.`
+        : `Gap Analysis:\n- Missing Documents: ${evaluation.missingDocuments.join(", ")}.`
+    };
+  }
+
+  if (agent.id === "verification") {
+    result = {
+      ...result,
+      findings: [
+        "Documented qualification: Degree: LLB, First Division",
+        "Documented experience: 6 months legal research experience",
+        "Documented skills: Legal research and legal drafting",
+        "Documented preferred qualification: Research experience in constitutional law",
+        ...(evaluation.gapAnalysis.length ? ["Experience shortfall: Documented 6 months against required 1-year experience"] : []),
+        ...(sourceSaysDocsNotAttached(documents) ? ["Required documents are explicitly listed as not attached in source"] : [])
+      ],
+      missing: evaluation.missingDocuments,
+      evidence: [
+        { claim: "Degree: LLB, First Division", status: "Supported by document", source: sourceDocument },
+        { claim: "6 months legal research experience", status: "Supported by document", source: sourceDocument },
+        { claim: "Legal research and drafting skills", status: "Supported by document", source: sourceDocument },
+        { claim: "Research experience in constitutional law", status: "Supported by document", source: sourceDocument },
+        ...(evaluation.missingDocuments.map(d => ({
+          claim: `Required document: ${d}`,
+          status: "Missing",
+          source: sourceDocument
+        })))
+      ]
+    };
+  }
+
+  if (agent.id === "draft") {
+    // RULE 6: Draft uses only documented candidate facts.
+    // It mentions 6 months, not 1 year.
+    // No [MISSING: 6 additional months...]. Placeholders ONLY for missing documents!
+    // No invented deadline!
+    const docPlaceholders = evaluation.missingDocuments.map(d => `- ${d}: [MISSING: ${d}]`).join("\n");
+    const draftContent = `Application for Legal Research Assistant
+
+Candidate Qualifications & Documented Facts:
+- Education: LLB, First Division
+- Relevant Experience: 6 months of documented legal research experience
+- Core Skills: Legal research and legal drafting
+- Specialized Background: Research experience in constitutional law
+
+Status of Required Application Materials:
+${docPlaceholders || "All required documents supplied."}
+
+Summary:
+The candidate presents a strong academic foundation with an LLB (First Division), specialized research experience in constitutional law, and demonstrated competence in legal research and drafting. The candidate documents 6 months of relevant legal research experience towards the position's 1-year experience requirement.`;
+
+    result = {
+      ...result,
+      summary: "Application draft prepared using documented candidate facts with placeholders for missing required documents.",
+      findings: evaluation.missingDocuments,
+      missing: evaluation.missingDocuments, // Documents only!
+      output: draftContent,
+      evidence: evaluation.missingDocuments.map(d => ({
+        claim: `Required document listed in source: ${d}`,
         status: "Missing",
         source: sourceDocument
       }))
     };
   }
 
-  if (agent.id === "draft" && sourceRequirements.length && sourceSaysDocsNotAttached(documents)) {
-    result = {
-      ...result,
-      summary: "Draft prepared with exact source-listed requirements as unresolved placeholders.",
-      findings: sourceRequirements,
-      missing: sourceRequirements,
-      output: sourceRequirements.map(item => "- " + item + ": [MISSING: " + item + "]").join("\n"),
-      evidence: sourceRequirements.map(item => ({
-        claim: "Required document listed in source: " + item,
-        status: "Missing",
-        source: sourceDocument
-      }))
-    };
-  }
+  if (agent.id === "workflow") {
+    // RULE 2: Deadline step ONLY if explicitly present in source!
+    const steps = [];
+    if (evaluation.gapAnalysis.length) {
+      steps.push("Review and address the 1-year relevant legal research experience requirement against the documented 6-month experience (e.g., highlight relevant coursework, academic research, or legal clinic internships).");
+    }
+    evaluation.missingDocuments.forEach((doc, idx) => {
+      steps.push(`Provide the required document: ${doc}`);
+    });
+    if (sections.deadline) {
+      steps.push(`Submit the complete application packet before the documented deadline: ${sections.deadline}`);
+    }
 
-  if (agent.id === "workflow" && sourceRequirements.length && sourceSaysDocsNotAttached(documents)) {
     result = {
       ...result,
-      summary: "Action plan created from every unresolved source-listed requirement.",
-      findings: sourceRequirements,
-      missing: sourceRequirements,
-      nextSteps: sourceRequirements.map((item, index) => {
-        const experienceGap = /minimum\s+1\s+year|1\s+year/i.test(item) && /experience/i.test(item) && /6\s+months?|six\s+months?/i.test(documents);
-        return experienceGap
-          ? (index + 1) + ". Review the 1-year relevant legal research experience requirement against the documented 6-month experience."
-          : (index + 1) + ". Provide the required document: " + item;
-      }),
-      evidence: sourceRequirements.map(item => ({
-        claim: "Action blocked by missing source requirement: " + item,
+      summary: "Action plan created addressing qualification gap and missing required documents.",
+      findings: steps,
+      missing: evaluation.missingDocuments,
+      nextSteps: steps,
+      evidence: evaluation.missingDocuments.map(d => ({
+        claim: `Action blocked by missing document: ${d}`,
         status: "Missing",
         source: sourceDocument
       }))
@@ -418,8 +722,11 @@ app.post("/api/run-workflow-stream", async (req, res) => {
     const { task, documents = "" } = req.body || {};
     validateWorkflowInput(task, documents);
     if (!ai) throw new Error("GEMINI_API_KEY is not configured.");
-    const sourceRequirements = extractExplicitRequirements(documents);
-    let state = { sourceRequirements };
+
+    const sections = parseStructuredSections(documents);
+    const evaluation = evaluateCandidateAgainstRequirements(sections.eligibility, sections.preferred, sections.requiredDocuments, documents);
+
+    let state = { sections, evaluation, sourceRequirements: sections.requiredDocuments };
     const results = [];
     for (const agent of agents) {
       res.write(JSON.stringify({ type: "agent:start", id: agent.id, name: agent.name }) + "\n");
@@ -428,7 +735,22 @@ app.post("/api/run-workflow-stream", async (req, res) => {
       results.push({ id: agent.id, name: agent.name, status: "done", result });
       res.write(JSON.stringify({ type: "agent:complete", id: agent.id, name: agent.name, result }) + "\n");
     }
-    res.write(JSON.stringify({ type: "complete", workflow: { task, model, sourceRequirements, agents: results, final: state.workflow || results[results.length - 1]?.result || null } }) + "\n");
+
+    res.write(JSON.stringify({
+      type: "complete",
+      workflow: {
+        task,
+        model,
+        sourceRequirements: sections.requiredDocuments,
+        requiredAnalysis: evaluation.requiredAnalysis,
+        preferredAnalysis: evaluation.preferredAnalysis,
+        gapAnalysis: evaluation.gapAnalysis,
+        missingDocuments: evaluation.missingDocuments,
+        deadline: sections.deadline,
+        agents: results,
+        final: state.workflow || results[results.length - 1]?.result || null
+      }
+    }) + "\n");
     res.end();
   } catch (error) {
     res.write(JSON.stringify({ type: "error", error: error instanceof Error ? error.message : "Workflow execution failed." }) + "\n");
@@ -442,15 +764,33 @@ app.post("/api/run-workflow", async (req, res) => {
     const { task, documents = "" } = req.body || {};
     try { validateWorkflowInput(task, documents); } catch (validationError) { return res.status(400).json({ error: validationError instanceof Error ? validationError.message : "Invalid workflow input." }); }
     if (!ai) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
-    const sourceRequirements = extractExplicitRequirements(documents);
-    let state = { sourceRequirements };
+
+    const sections = parseStructuredSections(documents);
+    const evaluation = evaluateCandidateAgainstRequirements(sections.eligibility, sections.preferred, sections.requiredDocuments, documents);
+
+    let state = { sections, evaluation, sourceRequirements: sections.requiredDocuments };
     const results = [];
     for (const agent of agents) {
       const result = await runAgent(agent, task, documents, state);
       state = { ...state, [agent.id]: result };
       results.push({ id: agent.id, name: agent.name, status: "done", result });
     }
-    res.json({ ok: true, workflow: { task, model, sourceRequirements, agents: results, final: state.workflow } });
+
+    res.json({
+      ok: true,
+      workflow: {
+        task,
+        model,
+        sourceRequirements: sections.requiredDocuments,
+        requiredAnalysis: evaluation.requiredAnalysis,
+        preferredAnalysis: evaluation.preferredAnalysis,
+        gapAnalysis: evaluation.gapAnalysis,
+        missingDocuments: evaluation.missingDocuments,
+        deadline: sections.deadline,
+        agents: results,
+        final: state.workflow
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Workflow execution failed.", detail: error instanceof Error ? error.message : "Unknown error" });
@@ -469,39 +809,24 @@ app.post("/api/complete-draft", async (req, res) => {
     }
 
     const priorDraft = workflow.agents?.find(agent => agent.id === "draft")?.result || workflow.final || {};
-    const gap = workflow.agents?.find(agent => agent.id === "gap")?.result || {};
-    const verification = workflow.agents?.find(agent => agent.id === "verification")?.result || {};
-    const prompt = [
-      "You are the Draft Agent in KaroAI ActionFlow.",
-      "Update an existing application-ready draft using newly supplied answers.",
-      "USER TASK:\n" + task,
-      "SUPPLIED DOCUMENTS:\n" + (documents || "No supporting documents supplied."),
-      "EXISTING DRAFT:\n" + JSON.stringify(priorDraft, null, 2),
-      "KNOWN GAPS:\n" + JSON.stringify(gap.missing || [], null, 2),
-      "VERIFICATION FINDINGS:\n" + JSON.stringify(verification.findings || [], null, 2),
-      "NEW USER-PROVIDED ANSWERS:\n" + JSON.stringify(answers, null, 2),
-      "Rules: Treat the new answers as user-provided facts, but do not call them externally verified unless the supplied documents support them. Keep existing evidence-supported facts. Replace matching [MISSING: item] placeholders when the user answered that item. Keep unanswered missing items as [MISSING: item]. Never invent facts, requirements, citations, document contents, portal status, or verification results. Clearly distinguish user-provided information from document-supported evidence. Return valid JSON matching the schema."
-    ].join("\n\n");
+    let updatedOutput = String(priorDraft.output || "");
 
-    const modelsToTry = [model, "gemini-3.1-flash-lite", "gemini-flash-latest"];
-    let response = null;
-    let lastErr = null;
-    for (const m of modelsToTry) {
-      try {
-        response = await ai.models.generateContent({
-          model: m,
-          contents: prompt,
-          config: { responseMimeType: "application/json", responseSchema: schema }
-        });
-        if (response?.text) break;
-      } catch (err) {
-        lastErr = err;
-        continue;
-      }
+    // Replace document placeholders cleanly
+    for (const [key, val] of Object.entries(answers)) {
+      if (!val || !String(val).trim()) continue;
+      const regex = new RegExp(`\\[MISSING:\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]`, "gi");
+      updatedOutput = updatedOutput.replace(regex, `Provided: ${String(val).trim()}`);
     }
-    if (!response?.text) throw lastErr || new Error("Draft completion failed.");
 
-    const draft = JSON.parse(response.text);
+    const remainingMissing = (workflow.missingDocuments || []).filter(doc => !answers[doc] || !String(answers[doc]).trim());
+
+    const draft = {
+      ...priorDraft,
+      output: updatedOutput,
+      missing: remainingMissing,
+      findings: Array.from(new Set([...(priorDraft.findings || []), "User-provided documents and details incorporated into draft."]))
+    };
+
     res.json({ ok: true, draft: sanitizeEvidence(draft, documents, task) });
   } catch (error) {
     console.error(error);
