@@ -103,6 +103,8 @@ async function runAgent(agent, task, documents, state) {
 }
 
 app.post("/api/extract-document", async (req, res) => {
+  const { name, mimeType, data } = req.body || {};
+  try { validateUploadPayload(mimeType, data); } catch (error) { return res.status(400).json({ error: error.message }); }
   try {
     const { name, mimeType, data } = req.body || {};
     if (!name || !data) return res.status(400).json({ error: "A document is required." });
@@ -145,9 +147,7 @@ app.post("/api/run-workflow-stream", async (req, res) => {
     let state = {};
     const results = [];
     for (const agent of agents) {
-      res.write(JSON.stringify({ type: "agent:start", id: agent.id, name: agent.name }) + "\  const { name, mimeType, data } = req.body || {};
-  try { validateUploadPayload(mimeType, data); } catch (error) { return res.status(400).json({ error: error.message }); }
-n");
+      res.write(JSON.stringify({ type: "agent:start", id: agent.id, name: agent.name }) + "\n");
       const result = await runAgent(agent, task, documents, state);
       state = { ...state, [agent.id]: result };
       results.push({ id: agent.id, name: agent.name, status: "done", result });
