@@ -96,6 +96,10 @@ function extractExplicitRequirements(documents) {
   return Array.from(new Set(items.map(item => item.replace(/\s+/g, " ").trim()).filter(Boolean))).slice(0, 30);
 }
 
+function sourceSaysDocsNotAttached(documents) {
+  return /required documents[^\n]*(?:not|have not|haven['’]?t)[^\n]*(?:attached|provided|submitted)/i.test(String(documents || ""));
+}
+
 function getUploadedDocumentNames(documents) {
   return Array.from(String(documents || "").matchAll(/(?:^|\n)DOCUMENT:\s*([^\n]+)/g)).map(match => match[1].trim());
 }
@@ -158,18 +162,66 @@ async function runAgent(agent, task, documents, state) {
     config: { responseMimeType: "application/json", responseSchema: schema }
   });
   let result = JSON.parse(response.text);
-  if (agent.id === "requirement" && Array.isArray(state.sourceRequirements) && state.sourceRequirements.length) {
+  const sourceRequirements = Array.isArray(state.sourceRequirements) ? state.sourceRequirements : [];
+  const sourceDocument = getUploadedDocumentNames(documents)[0] || "Supplied document";
+
+  if (agent.id === "requirement" && sourceRequirements.length) {
     result = {
       ...result,
-      findings: state.sourceRequirements,
+      findings: sourceRequirements,
       missing: [],
-      evidence: state.sourceRequirements.map(item => ({
+      evidence: sourceRequirements.map(item => ({
         claim: "Requirement documented: " + item,
         status: "Supported by document",
-        source: getUploadedDocumentNames(documents)[0] || "Supplied document"
+        source: sourceDocument
       }))
     };
   }
+
+  if (agent.id === "gap" && sourceRequirements.length && sourceSaysDocsNotAttached(documents)) {
+    result = {
+      ...result,
+      summary: "Each source-listed required document is unresolved because the document states that the required documents are not attached.",
+      findings: sourceRequirements,
+      missing: sourceRequirements,
+      evidence: sourceRequirements.map(item => ({
+        claim: "Missing required document: " + item,
+        status: "Missing",
+        source: sourceDocument
+      }))
+    };
+  }
+
+  if (agent.id === "draft" && sourceRequirements.length && sourceSaysDocsNotAttached(documents)) {
+    result = {
+      ...result,
+      summary: "Draft prepared with exact source-listed requirements as unresolved placeholders.",
+      findings: sourceRequirements,
+      missing: sourceRequirements,
+      output: sourceRequirements.map(item => "- " + item + ": [MISSING: " + item + "]").join("\n"),
+      evidence: sourceRequirements.map(item => ({
+        claim: "Required document listed in source: " + item,
+        status: "Missing",
+        source: sourceDocument
+      }))
+    };
+  }
+
+  if (agent.id === "workflow" && sourceRequirements.length && sourceSaysDocsNotAttached(documents)) {
+    result = {
+      ...result,
+      summary: "Action plan created from every unresolved source-listed requirement.",
+      findings: sourceRequirements,
+      missing: sourceRequirements,
+      nextSteps: sourceRequirements.map((item, index) => (index + 1) + ". Provide the required document: " + item),
+      evidence: sourceRequirements.map(item => ({
+        claim: "Action blocked by missing source requirement: " + item,
+        status: "Missing",
+        source: sourceDocument
+      }))
+    };
+  }
+
   return sanitizeEvidence(result, documents, task);
 }
 
