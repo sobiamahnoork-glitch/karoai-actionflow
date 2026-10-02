@@ -96,7 +96,18 @@ function isUploadedDocumentSource(source, documents) {
 function sanitizeEvidence(result, documents, task) {
   const hasEvidence = Boolean(String(documents || "").trim());
   const evidence = Array.isArray(result?.evidence) ? result.evidence : [];
-  if (hasEvidence) return result;
+  if (hasEvidence) {
+    const normalizedEvidence = evidence.map(item => {
+      const source = String(item?.source || "").trim();
+      const original = String(item?.status || "").trim();
+      let status = "Unverified";
+      if (/missing/i.test(original)) status = "Missing";
+      else if (/contradict/i.test(original)) status = "Contradicted";
+      else if (isUploadedDocumentSource(source, documents)) status = "Supported by document";
+      return { ...item, status, source: source || "Supplied document" };
+    });
+    return { ...result, evidence: normalizedEvidence, output: String(result?.output || "").replace(/\bVerified\b/gi, "Supported by document") };
+  }
 
   return {
     ...result,
@@ -215,7 +226,8 @@ app.post("/api/run-workflow", async (req, res) => {
     const { task, documents = "" } = req.body || {};
     try { validateWorkflowInput(task, documents); } catch (validationError) { return res.status(400).json({ error: validationError instanceof Error ? validationError.message : "Invalid workflow input." }); }
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
-    let state = {};
+    const sourceRequirements = extractExplicitRequirements(documents);
+    let state = { sourceRequirements };
     const results = [];
     for (const agent of agents) {
       const result = await runAgent(agent, task, documents, state);
