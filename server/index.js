@@ -402,6 +402,15 @@ app.post("/api/complete-draft", async (req, res) => {
   }
 });
 
+app.use("/api", (req, res, next) => {
+  if (res.headersSent) return next();
+  res.status(404).json({
+    error: "API endpoint not found.",
+    path: req.path,
+    hint: "The backend route is unavailable in this deployment."
+  });
+});
+
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api/")) return next();
   res.sendFile(path.join(__dirname, "..", "dist", "index.html"), error => {
