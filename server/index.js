@@ -134,6 +134,14 @@ function isExperienceRequirement(text) {
   return (hasTime && hasExpWord) && !isDoc;
 }
 
+function isRequiredDocumentItem(text) {
+  const lower = String(text || "").toLowerCase().trim();
+  return /^(?:an?\s+)?(?:updated\s+)?cv(?:\/resume)?\.?$/.test(lower)
+    || /^academic\s+transcript\.?$/.test(lower)
+    || /^(?:two|2)\s+references?\.?$/.test(lower)
+    || /\b(?:transcript|cv|resume|references?|referees?|reference letters?|supporting documents?|attachment|attachments)\b/.test(lower);
+}
+
 function parseStructuredSections(text) {
   const source = String(text || "");
   const lines = source.split(/\r?\n/).map(normalizeSourceLine).filter(Boolean);
@@ -149,10 +157,20 @@ function parseStructuredSections(text) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Check for explicit deadline line
+    // Check for explicit deadline line, including a heading followed by a date.
     const dlMatch = line.match(/^(?:application\s+deadline|deadline|submission\s+deadline|closing\s+date)\s*:\s*(.+)$/i);
     if (dlMatch && dlMatch[1].trim() && !/not\s+specified|n\/a|none|tbd|unknown/i.test(dlMatch[1])) {
       sections.deadline = dlMatch[1].trim();
+      currentSection = "notes";
+      continue;
+    }
+    if (/^(?:application\s+deadline|deadline|submission\s+deadline|closing\s+date)\s*:?$/i.test(line)) {
+      const next = lines[i + 1];
+      if (next && !/^(?:required|preferred|eligibility|candidate|notes?)\b/i.test(next)) {
+        sections.deadline = next.trim();
+        i += 1;
+      }
+      currentSection = "notes";
       continue;
     }
 
@@ -181,7 +199,10 @@ function parseStructuredSections(text) {
     const item = match ? match[1].trim() : line.trim();
 
     if (currentSection === "eligibility" && item) {
-      if (match) sections.eligibility.push(item);
+      if (isRequiredDocumentItem(item)) {
+        if (match) sections.requiredDocuments.push(item);
+        else if (sections.requiredDocuments.length && !/^[A-Z][^:]{0,50}:/.test(line)) sections.requiredDocuments[sections.requiredDocuments.length - 1] += " " + item;
+      } else if (match) sections.eligibility.push(item);
       else if (sections.eligibility.length && !/^[A-Z][^:]{0,50}:/.test(line)) sections.eligibility[sections.eligibility.length - 1] += " " + item;
     } else if (currentSection === "preferred" && item) {
       if (match) sections.preferred.push(item);
