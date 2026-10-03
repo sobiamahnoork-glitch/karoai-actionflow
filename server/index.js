@@ -162,6 +162,45 @@ function isExperienceRequirement(text) {
   return (hasTime && hasExpWord) && !isDoc;
 }
 
+function durationTokenValue(token) {
+  const words = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+  const value = Number(token);
+  return Number.isFinite(value) && value > 0 ? value : words[String(token || "").toLowerCase()] || 0;
+}
+
+function parseExperienceDurationMonths(text) {
+  const source = String(text || "").toLowerCase();
+  const quantity = "(?:\\d+(?:\\.\\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)";
+  const durationPattern = new RegExp(`\\b(${quantity})\\s*(years?|yrs?|months?|mos?)\\b`, "gi");
+  const durations = [];
+  let match;
+  while ((match = durationPattern.exec(source))) {
+    const amount = durationTokenValue(match[1]);
+    const unit = match[2].toLowerCase();
+    durations.push(/^(?:years?|yrs?)$/.test(unit) ? amount * 12 : amount);
+  }
+
+  const monthIndexes = { january: 0, jan: 0, february: 1, feb: 1, march: 2, mar: 2, april: 3, apr: 3, may: 4, june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7, september: 8, sep: 8, sept: 8, october: 9, oct: 9, november: 10, nov: 10, december: 11, dec: 11 };
+  const monthPattern = "(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)";
+  const dateRangePattern = new RegExp(`\\b(${monthPattern})\\s+(\\d{4})\\s*(?:[-–—]|to)\\s*(${monthPattern})\\s+(\\d{4})\\b`, "gi");
+  while ((match = dateRangePattern.exec(source))) {
+    const start = Number(match[2]) * 12 + monthIndexes[match[1]];
+    const end = Number(match[4]) * 12 + monthIndexes[match[3]];
+    if (end >= start) durations.push(end - start + 1);
+  }
+  return durations.length ? Math.max(...durations) : null;
+}
+
+function formatDurationMonths(months) {
+  const value = Math.max(0, Math.round(Number(months) || 0));
+  const years = Math.floor(value / 12);
+  const remainingMonths = value % 12;
+  const parts = [];
+  if (years) parts.push(`${years} ${years === 1 ? "year" : "years"}`);
+  if (remainingMonths) parts.push(`${remainingMonths} ${remainingMonths === 1 ? "month" : "months"}`);
+  return parts.join(" ") || "0 months";
+}
+
 function isRequiredDocumentItem(text) {
   const lower = String(text || "").toLowerCase().trim();
   return /^(?:an?\s+)?(?:updated\s+)?cv(?:\/resume)?\.?$/.test(lower)
@@ -179,11 +218,58 @@ function parseStructuredSections(text) {
     preferred: [],
     requiredDocuments: [],
     deadline: null,
-    candidateLines: []
+    candidateLines: [],
+    candidateExperienceLines: []
   };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    const documentHeading = line.match(/^DOCUMENT:\s*(.+)$/i);
+    if (documentHeading) {
+      const documentName = documentHeading[1].toLowerCase();
+      currentSection = /(?:job|role|requirement|posting|description|advertisement)/i.test(documentName)
+        ? "job"
+        : /(?:cv|resume|candidate|profile|transcript|degree|certificate|reference|portfolio)/i.test(documentName)
+          ? "candidate"
+          : "document";
+      continue;
+    }
+
+    const experienceHeading = line.match(/^(?:experience|employment|work\s+history|candidate\s+experience)\s*:\s*(.*)$/i)
+      || (/^(?:experience|employment|work\s+history|candidate\s+experience)$/i.test(line) ? ["", ""] : null);
+    if (experienceHeading && (!currentSection || currentSection === "candidate")) {
+      currentSection = "candidateExperience";
+      if (experienceHeading[1]) sections.candidateExperienceLines.push(experienceHeading[1]);
+      continue;
+    }
+    const jobExperienceRequirement = line.match(/^(?:experience|qualification|education|skills?)\s*:\s*(.+)$/i);
+    if (jobExperienceRequirement && (currentSection === "job" || currentSection === "eligibility")) {
+      sections.eligibility.push(line);
+      continue;
+    }
+    if (/^(?:job|role)\s+(?:posting|description|advertisement|ad)\s*:?$/i.test(line)) {
+      currentSection = "job";
+      continue;
+    }
+    const jobRequirementHeading = line.match(/^(?:job|role)\s+requirements?\s*:\s*(.*)$/i);
+    if (jobRequirementHeading) {
+      currentSection = "eligibility";
+      if (jobRequirementHeading[1]) sections.eligibility.push(jobRequirementHeading[1].trim());
+      continue;
+    }
+    if (currentSection === "candidateExperience") {
+      const isNextMajorSection = /^(?:education|academic\s+background|skills?|technical\s+skills|certifications?|certificates|languages?|projects?|awards?|publications?|references?|job\s+requirements?|job\s+description|position|eligibility(?:\s+requirements?)?|preferred(?:\s+requirements?)?|required(?:\s+documents?)?|deadline|application\s+deadline|submission\s+deadline)\s*(?::.*)?$/i.test(line);
+      if (isNextMajorSection) {
+        currentSection = /^(?:education|academic\s+background|skills?|technical\s+skills|certifications?|certificates|languages?|projects?|awards?|publications?|references?)\b/i.test(line)
+          ? "candidate"
+          : null;
+        if (currentSection === "candidate") sections.candidateLines.push(line);
+        continue;
+      }
+      sections.candidateExperienceLines.push(line);
+      continue;
+    }
 
     // Check for explicit deadline line, including a heading followed by a date.
     const dlMatch = line.match(/^(?:application\s+deadline|deadline|submission\s+deadline|closing\s+date)\s*:\s*(.+)$/i);
@@ -202,7 +288,7 @@ function parseStructuredSections(text) {
       continue;
     }
 
-    if (/^(?:eligibility\s+requirements|eligibility|required\s+qualifications|mandatory\s+requirements|minimum\s+requirements|required)\s*:?$/i.test(line)) {
+    if (/^(?:job\s+requirements?|role\s+requirements?|requirements?|eligibility\s+requirements|eligibility|required\s+qualifications|mandatory\s+requirements|minimum\s+requirements|required)\s*:?$/i.test(line)) {
       currentSection = "eligibility";
       continue;
     }
@@ -214,7 +300,7 @@ function parseStructuredSections(text) {
       currentSection = "requiredDocuments";
       continue;
     }
-    if (/^(?:candidate\s+profile|candidate\s+statement|applicant\s+statement|applicant\s+details|candidate\s+information)\s*:?$/i.test(line)) {
+    if (/^(?:candidate\s+(?:profile|statement|cv|resume|details|information)|applicant\s+(?:statement|details|information))\s*:?$/i.test(line)) {
       currentSection = "candidate";
       continue;
     }
@@ -246,29 +332,28 @@ function parseStructuredSections(text) {
     }
   }
 
-  // Fallbacks if headings are not in standard format
-  if (!sections.eligibility.length) {
-    if (/minimum\s+1\s+year.*experience/i.test(source)) sections.eligibility.push("Minimum 1 year relevant legal research experience");
-    if (/llb\b/i.test(source)) sections.eligibility.push("LLB degree");
-    if (/legal\s+research\s+skills?/i.test(source)) sections.eligibility.push("Legal research skills");
-    if (/legal\s+drafting\s+skills?/i.test(source)) sections.eligibility.push("Legal drafting skills");
-  }
-  if (!sections.preferred.length) {
-    if (/constitutional\s+law/i.test(source)) sections.preferred.push("Research experience in constitutional law");
-    if (/legal\s+database/i.test(source)) sections.preferred.push("Knowledge of legal databases");
-  }
-  if (!sections.requiredDocuments.length) {
-    if (/academic\s+transcript/i.test(source)) sections.requiredDocuments.push("Academic transcript");
-    if (/updated\s+cv|resume/i.test(source)) sections.requiredDocuments.push("Updated CV");
-    if (/two\s+references|references/i.test(source)) sections.requiredDocuments.push("Two references");
-  }
-
   // De-duplicate and ensure no experience items in requiredDocuments
   sections.eligibility = Array.from(new Set(sections.eligibility.map(x => x.replace(/\s+/g, " ").trim()).filter(Boolean)));
   sections.preferred = Array.from(new Set(sections.preferred.map(x => x.replace(/\s+/g, " ").trim()).filter(Boolean)));
   sections.requiredDocuments = Array.from(new Set(sections.requiredDocuments.map(x => x.replace(/\s+/g, " ").trim()).filter(x => x && !isExperienceRequirement(x))));
 
   return sections;
+}
+
+function getCandidateEvidenceText(fullText, candidateLines = [], candidateExperienceLines = []) {
+  const candidateDocumentBlocks = String(fullText || "")
+    .split(/(?=^DOCUMENT:\s*)/m)
+    .filter(block => {
+      const name = block.match(/^DOCUMENT:\s*([^\n]+)/i)?.[1] || "";
+      return /(?:^|[^a-z0-9])(?:cv|resume|candidate|profile|transcript|degree|certificate|reference|portfolio)(?:[^a-z0-9]|$)/i.test(name);
+    })
+    .map(block => block.replace(/^DOCUMENT:[^\n]*\n?/i, ""));
+
+  return [
+    ...candidateLines,
+    ...candidateExperienceLines,
+    ...candidateDocumentBlocks
+  ].join("\n");
 }
 
 function sourceSaysDocsNotAttached(documents) {
@@ -294,7 +379,7 @@ function sourceTextSupportsClaim(claim, documents) {
   const compact = text.replace(/\s+/g, " ").toLowerCase();
   const claimCompact = lower.replace(/\s+/g, " ");
   const aliases = [
-    ["llb degree", ["degree: llb", "llb, first division", "llb degree", "llb"]],
+    ["llb degree", ["degree: llb", "llb, first division", "llb degree", "llb", "ll.b"]],
     ["legal research skills", ["legal research skills", "legal research"]],
     ["legal drafting skills", ["legal drafting skills", "legal drafting"]],
     ["minimum 1 year relevant legal research experience", ["minimum 1 year relevant legal research experience", "1 year relevant legal research experience"]],
@@ -333,9 +418,10 @@ function isRequirementGapClaim(claim, documents) {
   return oneYear && experience && sixMonths;
 }
 
-function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDocuments, fullText) {
+function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDocuments, fullText, candidateExperienceLines = [], candidateLines = []) {
   const text = String(fullText || "");
-  const lowerText = text.toLowerCase();
+  const candidateText = getCandidateEvidenceText(text, candidateLines, candidateExperienceLines);
+  const lowerCandidateText = candidateText.toLowerCase();
 
   // 1. Required / Eligibility evaluation
   const requiredAnalysis = eligibility.map(req => {
@@ -343,87 +429,78 @@ function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDo
 
     // Check for Experience Requirement
     if (isExperienceRequirement(req)) {
-      const requiresOneYear = /1\s*year|one\s*year|12\s*months?/.test(lowerReq);
-      const candidateExperienceLines = text
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(line => /^(?:experience|employment|work\s+history|candidate\s+experience)\s*:/i.test(line))
-        .join(" ");
-      const candidateContextText = candidateExperienceLines || text
-        .split(/\r?\n/)
-        .filter(line => /candidate|applicant/i.test(line) && !/required|preferred|deadline|position/i.test(line))
-        .join(" ");
-      const candidateHasSixMonths = /6\s*months?|six\s*months?/.test(candidateContextText.toLowerCase());
-      // Candidate evidence is read only from explicit candidate-experience context.
-      // This prevents a "1 year" requirement in the job description from becoming candidate evidence.
-      const candidateHasOneYear = /(?:at\s+least\s+)?(?:1\s*year|one\s*year|12\s*months?)/i.test(candidateContextText);
+      const requiredMonths = parseExperienceDurationMonths(req);
+      const candidateContextText = Array.isArray(candidateExperienceLines) ? candidateExperienceLines.join(" ") : "";
+      const candidateMonths = parseExperienceDurationMonths(candidateContextText);
 
-      if (requiresOneYear && candidateHasSixMonths && !candidateHasOneYear) {
+      if (requiredMonths && candidateMonths && candidateMonths < requiredMonths) {
+        const shortfall = formatDurationMonths(requiredMonths - candidateMonths);
+        const requiredDuration = formatDurationMonths(requiredMonths);
         return {
           requirement: req,
-          candidateEvidence: "6 months documented experience",
+          candidateEvidence: `${formatDurationMonths(candidateMonths)} documented experience`,
           status: "Gap",
           isGap: true,
-          gapShortfall: "6 months",
-          gapDescription: "6-month shortfall against the 1-year requirement"
+          gapShortfall: shortfall,
+          gapDescription: `${shortfall.replace(/\s+/g, "-")} shortfall against the ${requiredDuration.replace(/\s+/g, "-")} requirement`
         };
-      } else if (candidateHasOneYear) {
+      } else if (requiredMonths && candidateMonths && candidateMonths >= requiredMonths) {
         return {
           requirement: req,
-          candidateEvidence: "1 year documented experience",
+          candidateEvidence: `${formatDurationMonths(candidateMonths)} documented experience`,
           status: "Met",
           isGap: false
         };
       } else {
         return {
           requirement: req,
-          candidateEvidence: candidateHasSixMonths ? "6 months documented experience" : "Unverified in candidate profile",
-          status: candidateHasSixMonths ? "Gap" : "Unresolved",
-          isGap: candidateHasSixMonths,
-          gapShortfall: candidateHasSixMonths ? "6 months" : null,
-          gapDescription: candidateHasSixMonths ? "Shortfall against experience requirement" : null
+          candidateEvidence: candidateMonths ? `${formatDurationMonths(candidateMonths)} documented experience` : "Not enough evidence",
+          status: "Not enough evidence",
+          isGap: false,
+          gapShortfall: null,
+          gapDescription: null
         };
       }
     }
 
     // Check for Degree (e.g. LLB)
     if (/llb\b/i.test(lowerReq)) {
-      const hasLLB = /degree\s*:\s*llb|llb,\s*first\s*division|llb\s*degree/i.test(text);
+      const hasLLB = /\bll\.?\s*b\b/i.test(candidateText);
       return {
         requirement: req,
         candidateEvidence: hasLLB ? "Degree: LLB, First Division" : "No degree record in profile",
-        status: hasLLB ? "Met" : "Unresolved",
+        status: hasLLB ? "Met" : "Not enough evidence",
         isGap: false
       };
     }
 
     // Check for Legal Research skills
     if (/legal\s+research\s+skills?/i.test(lowerReq)) {
-      const hasSkill = /legal\s+research/i.test(lowerText);
+      const hasSkill = /legal\s+research/i.test(lowerCandidateText);
       return {
         requirement: req,
         candidateEvidence: hasSkill ? "Legal research skills documented in profile" : "Not documented",
-        status: hasSkill ? "Met" : "Unresolved",
+        status: hasSkill ? "Met" : "Not enough evidence",
         isGap: false
       };
     }
 
     // Check for Legal Drafting skills
     if (/legal\s+drafting\s+skills?/i.test(lowerReq)) {
-      const hasSkill = /legal\s+drafting/i.test(lowerText);
+      const hasSkill = /legal\s+drafting/i.test(lowerCandidateText);
       return {
         requirement: req,
         candidateEvidence: hasSkill ? "Legal drafting skills documented in profile" : "Not documented",
-        status: hasSkill ? "Met" : "Unresolved",
+        status: hasSkill ? "Met" : "Not enough evidence",
         isGap: false
       };
     }
 
-    const supported = sourceTextSupportsClaim(req, text);
+    const supported = sourceTextSupportsClaim(req, candidateText);
     return {
       requirement: req,
-      candidateEvidence: supported ? "Documented in candidate evidence" : "Not documented in candidate profile",
-      status: supported ? "Met" : "Unresolved",
+      candidateEvidence: supported ? "Documented in candidate evidence" : "Not enough evidence",
+      status: supported ? "Met" : "Not enough evidence",
       isGap: false
     };
   });
@@ -435,13 +512,13 @@ function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDo
     let isDocumented = false;
     let evidenceText = "Not documented in candidate profile";
 
-    if (/constitutional\s+law/i.test(lowerPref) && /constitutional\s+law/i.test(lowerText)) {
+    if (/constitutional\s+law/i.test(lowerPref) && /constitutional\s+law/i.test(lowerCandidateText)) {
       isDocumented = true;
       evidenceText = "Research experience in constitutional law documented";
-    } else if (/legal\s+database/i.test(lowerPref) && /legal\s+database/i.test(lowerText)) {
+    } else if (/legal\s+database/i.test(lowerPref) && /legal\s+database/i.test(lowerCandidateText)) {
       isDocumented = true;
       evidenceText = "Knowledge of legal databases documented";
-    } else if (sourceTextSupportsClaim(pref, text)) {
+    } else if (sourceTextSupportsClaim(pref, candidateText)) {
       isDocumented = true;
       evidenceText = "Documented in profile";
     }
@@ -497,10 +574,16 @@ function evaluateCandidateAgainstRequirements(eligibility, preferred, requiredDo
   };
 }
 
-function sanitizeEvidence(result, documents, _task) {
+function sanitizeEvidence(result, documents, _task, agentId = "") {
   const hasEvidence = Boolean(String(documents || "").trim());
   const evidence = Array.isArray(result?.evidence) ? result.evidence : [];
   if (hasEvidence) {
+    const candidateSections = parseStructuredSections(documents);
+    const candidateText = getCandidateEvidenceText(
+      documents,
+      candidateSections.candidateLines,
+      candidateSections.candidateExperienceLines
+    );
     const normalizedEvidence = evidence.map(item => {
       const source = String(item?.source || "").trim();
       const original = String(item?.status || "").trim();
@@ -508,6 +591,13 @@ function sanitizeEvidence(result, documents, _task) {
       let status = "Unverified";
       if (/missing/i.test(original)) status = "Missing";
       else if (/contradict/i.test(original)) status = "Contradicted";
+      else if (/needs review/i.test(original)) status = "Needs Review";
+      else if (/unverified|not enough evidence/i.test(original)) status = "Unverified";
+      else if (agentId === "verification") {
+        status = candidateText && sourceTextSupportsClaim(claim, candidateText)
+          ? "Supported by document"
+          : "Unverified";
+      }
       else if (sourceTextSupportsClaim(claim, documents) && !isRequirementGapClaim(claim, documents)) status = "Supported by document";
       else if (/submitted|submission/.test(claim) && /before|deadline/.test(claim)) status = "Needs Review";
       else if (isUploadedDocumentSource(source, documents)) status = "Supported by document";
@@ -524,15 +614,7 @@ function sanitizeEvidence(result, documents, _task) {
       source: "No supporting evidence provided"
     })),
     findings: (result?.findings || []).map(item => item),
-    missing: Array.from(new Set([
-      ...(result?.missing || []),
-      "Supporting documents or source material are needed to verify application-specific claims."
-    ])),
-    output: String(result?.output || "").replace(/\bVerified\b/gi, "Not verified"),
-    nextSteps: Array.from(new Set([
-      ...(result?.nextSteps || []),
-      "Provide the relevant application requirements or supporting documents before treating claims as verified."
-    ]))
+    output: String(result?.output || "").replace(/\bVerified\b/gi, "Not verified")
   };
 }
 
@@ -542,6 +624,12 @@ async function runAgent(agent, task, documents, state) {
 
   const { sections, evaluation } = state;
   const sourceDocument = getUploadedDocumentNames(documents)[0] || "Supplied document";
+  const hasStructuredAssessment = Boolean(
+    sections.eligibility.length
+    || sections.preferred.length
+    || sections.requiredDocuments.length
+    || sections.deadline
+  );
 
   const prompt = [
     "You are the " + agent.name + " in KaroAI ActionFlow.",
@@ -583,7 +671,7 @@ async function runAgent(agent, task, documents, state) {
   let result = JSON.parse(response.text);
 
   // Deterministic post-processing to guarantee exact adherence to the user's 7 strict rules:
-  if (agent.id === "requirement") {
+  if (agent.id === "requirement" && hasStructuredAssessment) {
     result = {
       ...result,
       findings: [
@@ -608,18 +696,21 @@ async function runAgent(agent, task, documents, state) {
     };
   }
 
-  if (agent.id === "gap") {
+  if (agent.id === "gap" && hasStructuredAssessment) {
     // Deterministic gap result: never let the model erase a detected qualification gap.
     const gapLines = evaluation.gapAnalysis.map(g =>
-      `Qualification/Experience Gap: ${g.requirement} — ${g.candidateEvidence}; ${g.gap}`
+      `Qualification/Experience Gap: ${g.description || `${g.requirement} — ${g.candidateEvidence}; ${g.gap}`}`
     );
+    const unresolvedLines = evaluation.requiredAnalysis
+      .filter(item => item.status === "Not enough evidence" || item.status === "Unresolved")
+      .map(item => `Mandatory requirement needs more evidence: ${item.requirement}`);
     const missingLines = evaluation.missingDocuments.map(d =>
       `Missing Required Document: ${d} — not provided in supplied documents`
     );
     result = {
       ...result,
-      summary: `Identified ${evaluation.gapAnalysis.length} qualification gap(s) and ${evaluation.missingDocuments.length} missing required document(s).`,
-      findings: [...gapLines, ...missingLines],
+      summary: `Identified ${evaluation.gapAnalysis.length} qualification gap(s), ${unresolvedLines.length} unresolved mandatory requirement(s), and ${evaluation.missingDocuments.length} missing required document(s).`,
+      findings: [...gapLines, ...unresolvedLines, ...missingLines],
       missing: evaluation.missingDocuments,
       evidence: [
         ...evaluation.gapAnalysis.map(g => ({
@@ -627,6 +718,13 @@ async function runAgent(agent, task, documents, state) {
           status: "Needs Review",
           source: sourceDocument
         })),
+        ...evaluation.requiredAnalysis
+          .filter(item => item.status === "Not enough evidence" || item.status === "Unresolved")
+          .map(item => ({
+            claim: `Mandatory requirement needs evidence: ${item.requirement}`,
+            status: "Unverified",
+            source: sourceDocument
+          })),
         ...evaluation.missingDocuments.map(d => ({
           claim: `Missing required document: ${d}`,
           status: "Missing",
@@ -641,7 +739,7 @@ async function runAgent(agent, task, documents, state) {
     };
   }
 
-  if (agent.id === "verification") {
+  if (agent.id === "verification" && hasStructuredAssessment) {
     const requiredEvidence = evaluation.requiredAnalysis.map(r => ({
       claim: r.requirement,
       status: r.status === "Met" ? "Supported by document" : r.status === "Gap" ? "Needs Review" : "Unverified",
@@ -669,34 +767,39 @@ async function runAgent(agent, task, documents, state) {
     };
   }
 
-  if (agent.id === "workflow") {
+  if (agent.id === "workflow" && hasStructuredAssessment) {
     // RULE 2: Deadline step ONLY if explicitly present in source!
     const steps = [];
     evaluation.gapAnalysis.forEach(g => {
-      steps.push(`Address qualification gap: ${g.description || g.requirement}`);
+      steps.push(`Address the ${g.description || g.requirement}`);
     });
-    evaluation.missingDocuments.forEach((doc, idx) => {
-      steps.push(`Provide the required document: ${doc}`);
+    evaluation.requiredAnalysis
+      .filter(item => item.status === "Not enough evidence" || item.status === "Unresolved")
+      .forEach(item => steps.push(`Provide evidence for ${item.requirement}`));
+    evaluation.missingDocuments.forEach(doc => {
+      steps.push(`Provide ${doc}`);
     });
     if (sections.deadline) {
-      steps.push(`Submit the complete application packet before the documented deadline: ${sections.deadline}`);
+      steps.push(`Submit before ${sections.deadline}`);
     }
 
-    result = {
-      ...result,
-      summary: "Action plan created addressing qualification gap and missing required documents.",
-      findings: steps,
-      missing: evaluation.missingDocuments,
-      nextSteps: steps,
-      evidence: evaluation.missingDocuments.map(d => ({
-        claim: `Action blocked by missing document: ${d}`,
-        status: "Missing",
-        source: sourceDocument
-      }))
-    };
+    if (steps.length) {
+      result = {
+        ...result,
+        summary: "Action plan created from documented gaps, unresolved evidence, missing required documents, and explicit deadlines.",
+        findings: steps,
+        missing: evaluation.missingDocuments,
+        nextSteps: steps,
+        evidence: evaluation.missingDocuments.map(d => ({
+          claim: `Action blocked by missing document: ${d}`,
+          status: "Missing",
+          source: sourceDocument
+        }))
+      };
+    }
   }
 
-  return sanitizeEvidence(result, documents, task);
+  return sanitizeEvidence(result, documents, task, agent.id);
 }
 
 // API Routes
@@ -769,7 +872,7 @@ app.post("/api/run-workflow-stream", async (req, res) => {
     if (!ai) throw new Error("GEMINI_API_KEY is not configured.");
 
     const sections = parseStructuredSections(documents);
-    const evaluation = evaluateCandidateAgainstRequirements(sections.eligibility, sections.preferred, sections.requiredDocuments, documents);
+    const evaluation = evaluateCandidateAgainstRequirements(sections.eligibility, sections.preferred, sections.requiredDocuments, documents, sections.candidateExperienceLines, sections.candidateLines);
 
     let state = { sections, evaluation, sourceRequirements: sections.requiredDocuments };
     const results = [];
@@ -811,7 +914,7 @@ app.post("/api/run-workflow", async (req, res) => {
     if (!ai) return res.status(500).json({ error: "GEMINI_API_KEY is not configured." });
 
     const sections = parseStructuredSections(documents);
-    const evaluation = evaluateCandidateAgainstRequirements(sections.eligibility, sections.preferred, sections.requiredDocuments, documents);
+    const evaluation = evaluateCandidateAgainstRequirements(sections.eligibility, sections.preferred, sections.requiredDocuments, documents, sections.candidateExperienceLines, sections.candidateLines);
 
     let state = { sections, evaluation, sourceRequirements: sections.requiredDocuments };
     const results = [];
@@ -904,7 +1007,10 @@ app.get("*", (req, res, next) => {
 
 app.listen(port, host, () => {
   console.log(`KaroAI ActionFlow listening on http://${host}:${port}`);
-});  if (agent.id === "draft") {
+});
+
+/* Stray duplicate code appended after the active server startup; keep it inert.
+if (agent.id === "draft") {
     const docPlaceholders = evaluation.missingDocuments.map(d => `[MISSING: ${d}]`);
     const cleanedOutput = String(result?.output || "");
     result = {
@@ -1162,3 +1268,4 @@ app.get("*", (req, res, next) => {
 app.listen(port, host, () => {
   console.log(`KaroAI ActionFlow listening on http://${host}:${port}`);
 });
+*/

@@ -1,0 +1,96 @@
+The workflow is running, but the final deterministic result is still incorrect.
+
+Do NOT rebuild the application or change the UI, agent architecture, Gemini configuration, database, or unrelated logic.
+
+Fix ONLY the candidate experience evidence parsing and downstream gap/action-plan calculation.
+
+TEST CASE:
+
+Candidate CV:
+Name: Ayesha Khan
+
+Education:
+LL.B — University of Karachi
+1st Division
+Graduation: 2025
+
+Experience:
+Legal Research Intern — Legal Research Office
+January 2026 – June 2026
+
+6 months legal research experience.
+
+Conducted legal research and assisted with legal drafting.
+
+Researched constitutional law and used legal databases.
+
+Skills:
+Legal research
+Legal drafting
+MS Office
+
+Job requirement:
+Minimum 1 year relevant legal research experience.
+
+REQUIRED BEHAVIOR:
+
+1. The parser must recognize that the candidate has 6 months of documented legal research experience.
+
+2. The current parser is only capturing the line beginning with "Experience:" and therefore misses the following lines containing "6 months legal research experience."
+
+3. Fix the candidate experience context extraction so that it captures the relevant lines belonging to the Experience section, including the lines immediately following the Experience heading, until the next major section such as Skills, Education, Certification, Languages, etc.
+
+4. Do NOT read the job requirement itself as candidate evidence.
+
+5. Do NOT infer 1 year from the requirement.
+
+6. Candidate evidence must be:
+   "6 months documented experience"
+   or equivalent wording clearly representing the supplied CV evidence.
+
+7. For:
+   "Minimum 1 year relevant legal research experience."
+   the deterministic evaluation must return:
+   status = "Gap"
+   isGap = true
+   gapShortfall = "6 months"
+   gapDescription = "6-month shortfall against the 1-year requirement"
+
+8. The Gap Agent must report:
+   1 actual qualification/experience gap
+   and 3 missing required documents.
+
+9. The action plan must contain 5 steps:
+   - Address the 6-month shortfall against the 1-year requirement
+   - Provide Updated CV
+   - Provide Academic transcript
+   - Provide Two references
+   - Submit before 30 November 2026
+
+10. The Final Assessment must show:
+   Total Required = 4
+   Supported Required = 3
+   Actual gaps = 1
+   Missing required documents = 3
+   Preferred supported = 2
+   Application deadline = 30 November 2026
+
+11. The Required requirement row must show:
+   LLB degree → Supported
+   Minimum 1 year relevant legal research experience → Gap
+   Strong legal research skills → Supported
+   Legal drafting skills → Supported
+
+12. Preferred requirements must remain separate:
+   Constitutional law → Documented
+   Legal databases → Documented
+
+13. Do not change the existing terminology:
+   Supported
+   Gap
+   Not enough evidence
+   Missing
+
+14. After making the minimal fix, rebuild and run the complete workflow again using this same test case.
+
+15. Do not consider the fix complete unless the final deterministic assessment reports exactly 1 actual gap and the action plan contains 5 steps.

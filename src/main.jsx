@@ -307,13 +307,6 @@ function App() {
     const verificationResult = workflowAgents.find(a => a.id === "verification")?.result;
   const draftResult = workflowAgents.find(a => a.id === "draft")?.result;
   const workflowResult = workflowAgents.find(a => a.id === "workflow")?.result;
-  // Build the visible action plan from deterministic evaluation, so the UI cannot
-  // lose a real qualification gap when an AI agent returns a weaker summary.
-  const actionSteps = result ? [
-    ...gapAnalysis.map(item => `Address qualification gap: ${item.description || item.requirement}`),
-    ...missingDocuments.map(doc => `Provide the required document: ${doc}`),
-    ...(result.deadline ? [`Submit the complete application packet before the documented deadline: ${result.deadline}`] : [])
-  ] : [];
 
   const draftPlaceholders = Array.from(new Set(((draftResult?.output || "").match(/\[MISSING:\s*[^\]]+\]/gi) || []).map(item => item.trim()))).slice(0, 12);
   const rawMissingItems = draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim()).filter(Boolean);
@@ -349,6 +342,13 @@ function App() {
   const preferredAnalysis = Array.isArray(result?.preferredAnalysis) ? result.preferredAnalysis : [];
   const gapAnalysis = Array.isArray(result?.gapAnalysis) ? result.gapAnalysis : [];
   const missingDocuments = Array.isArray(result?.missingDocuments) ? result.missingDocuments : [];
+  // Build the visible action plan from deterministic evaluation, so the UI cannot
+  // lose a real qualification gap when an AI agent returns a weaker summary.
+  const actionSteps = result ? [
+    ...gapAnalysis.map(item => `Address the ${item.description || item.requirement}`),
+    ...missingDocuments.map(doc => `Provide ${doc}`),
+    ...(result.deadline ? [`Submit before ${result.deadline}`] : [])
+  ] : [];
   const missingItems = draftPlaceholders.length
     ? draftPlaceholders.map(item => item.replace(/^\[MISSING:\s*/i, "").replace(/\]$/, "").trim())
     : missingDocuments;
@@ -590,7 +590,7 @@ function App() {
               <div className="metric"><b>{preferredAnalysis.filter(item => item.status === "Documented").length}</b><span>Preferred supported</span></div>
             </div>
             <div className="sourceintro"><b>Application deadline:</b> {result.deadline || "Not provided in the supplied documents."}</div>
-          </section>
+          </section>}
 
           {result && <section className="panel completionpanel">
             <div className="completionicon"><CheckCircle2 size={22}/></div>
